@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -48,6 +49,35 @@ PLANNER_SCHEMA: dict[str, Any] = {
     "required": ["title", "design_markdown", "stories"],
     "additionalProperties": False,
 }
+
+
+def _is_windows_mount_path(path: str) -> bool:
+    return bool(re.match(r"^/mnt/[A-Za-z]/", path))
+
+
+def find_native_executable(name: str) -> str | None:
+    """Prefer a Linux executable when the dashboard runs inside WSL."""
+    first = shutil.which(name)
+
+    if not os.environ.get("WSL_DISTRO_NAME"):
+        return first
+
+    candidates: list[str] = []
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        candidate = Path(directory) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            candidates.append(str(candidate))
+
+    if first and first not in candidates:
+        candidates.insert(0, first)
+
+    for candidate in candidates:
+        if not _is_windows_mount_path(candidate):
+            return candidate
+
+    return None
 
 
 def _run(
@@ -412,7 +442,7 @@ class PlannerService:
         }
 
     def _gemini_status(self) -> dict[str, Any]:
-        executable = shutil.which("gemini")
+        executable = find_native_executable("gemini")
         if not executable:
             return {
                 "id": "gemini",
@@ -421,7 +451,14 @@ class PlannerService:
                 "connected": False,
                 "auth_mode": None,
                 "plan": None,
-                "detail": "Gemini CLI is not installed",
+                "detail": (
+                    "Windows Gemini CLI was detected, but this WSL dashboard requires "
+                    "a native WSL Gemini CLI. Install it inside Ubuntu with "
+                    "'npm install -g @google/gemini-cli'."
+                    if shutil.which("gemini")
+                    and _is_windows_mount_path(shutil.which("gemini") or "")
+                    else "Gemini CLI is not installed"
+                ),
             }
 
         settings_path = Path("~/.gemini/settings.json").expanduser()
@@ -552,17 +589,32 @@ class PlannerService:
         return {"connected": False, "detail": (result.stdout or result.stderr).strip()}
 
     def launch_gemini_login(self, repo: Path | None = None) -> dict[str, Any]:
-        executable = shutil.which("gemini")
+        executable = find_native_executable("gemini")
         if not executable:
             raise PlannerError("Gemini CLI가 설치되어 있지 않습니다.")
 
         cwd = str(repo or Path.home())
         distro = os.environ.get("WSL_DISTRO_NAME")
         wt = shutil.which("wt.exe")
+        bin_dir = str(Path(executable).parent)
+        login_command = (
+            f"export PATH={shlex.quote(bin_dir)}:\\"$PATH\\"; "
+            f"exec {shlex.quote(executable)}"
+        )
 
         if distro and wt:
             subprocess.Popen(
-                [wt, "wsl.exe", "-d", distro, "--cd", cwd, "bash", "-lc", "gemini"],
+                [
+                    wt,
+                    "wsl.exe",
+                    "-d",
+                    distro,
+                    "--cd",
+                    cwd,
+                    "bash",
+                    "-lc",
+                    login_command,
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -575,7 +627,7 @@ class PlannerService:
         terminal = shutil.which("x-terminal-emulator")
         if terminal:
             subprocess.Popen(
-                [terminal, "-e", executable],
+                [terminal, "-e", "bash", "-lc", login_command],
                 cwd=repo,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -650,7 +702,7 @@ class PlannerService:
             return validate_planner_result(payload), log
 
     def _generate_gemini(self, repo: Path, prompt: str) -> tuple[dict[str, Any], Path]:
-        executable = shutil.which("gemini")
+        executable = find_native_executable("gemini")
         if not executable:
             raise PlannerError("Gemini CLI가 설치되어 있지 않습니다.")
 
