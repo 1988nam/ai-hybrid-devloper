@@ -70,6 +70,9 @@ class PlannerApi:
                 source_repo=str(source_repo),
                 requirement=str(body.get("requirement", "")),
                 model=str(body.get("model", "")).strip() or None,
+                reasoning_effort=(
+                    str(body.get("reasoning_effort", "")).strip() or None
+                ),
             )
             return HTTPStatus.OK, result
 
