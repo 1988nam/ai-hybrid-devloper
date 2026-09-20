@@ -440,17 +440,43 @@ The design_markdown must include:
 
 STORY RULES
 ===========
+These stories will be executed by a smaller local Qwen model through Aider.
+Optimize for reliable autonomous execution, not for the fewest number of stories.
+
 - Stories must be ordered so each story starts from the previous story's integrated result.
-- Keep each story coherent enough for one autonomous coding loop. Split unrelated concerns.
+- Target 2-4 editable files per story.
+- HARD MAXIMUM: {LOCAL_STORY_HARD_MAX_PATHS} allowed_paths entries per story,
+  INCLUDING tests. If more files are needed, split the story.
+- Maximum {LOCAL_STORY_MAX_NEW_FILES} new files in one story.
+- One primary subsystem or migration concern per story.
+- Do not combine a new abstraction/helper with migration of every consumer.
+  First establish the helper/contract + focused tests, then migrate small groups
+  of consumers in later stories.
+- If a new dependency changes VM/test harness setup, create an early compatibility
+  story that updates the harness before migrating more production files.
+- Keep these concerns separate unless the change is genuinely tiny and atomic:
+  storage/config, diary generation, photo/Drive, auth/session, build/deploy,
+  worker/API, portal/navigation, service worker, browser regression, documentation.
 - Each story prompt must be self-contained and implementation-oriented.
 - Use real repository paths. Never invent an existing path you did not verify.
-- A new file path is allowed only when its parent/location is justified by repository structure.
-- allowed_paths must be the smallest practical edit scope for that story.
-- Include relevant test files in allowed_paths when tests should change.
-- Explicitly protect existing behavior and prohibit deleting, skipping, weakening, or bypassing tests.
-- Prefer existing repository test/build commands. Add verify_commands only when a story needs an additional targeted command already supported by the repository.
+- allowed_paths is an EDIT PERMISSION LIST, not a list of every related file.
+  Do not include read-only/reference files merely because the model may inspect them.
+- Include a test file only when that story is expected to edit that test file.
+- Use literal repo-relative paths. Never use regex/shell escaping in paths:
+  write apps/dachangi/sw.js, not apps/dachangi/sw\\.js.
+- Do not escape normal punctuation inside prompt text (for example write A:H,
+  not A\\:H).
+- Explicitly protect existing behavior and prohibit deleting, skipping, weakening,
+  or bypassing tests.
+- The factory already runs npm test and npm run build after every story.
+  verify_commands must contain only ADDITIONAL targeted checks; do not repeat the
+  base gates there.
+- Every story must leave the repository in a state where the base gates can pass.
+  Never create a knowingly broken intermediate migration.
 - Do not ask the local model to make architectural choices already resolved in the design.
 - Do not include planning-only stories. Every story must produce an implementation increment.
+- Do not create a broad final "fix anything remaining" story. Browser regression,
+  fixes discovered by it, docs, and final verification must stay bounded.
 
 OUTPUT
 ======
