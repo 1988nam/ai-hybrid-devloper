@@ -508,14 +508,17 @@ function bind() {
 
     if (value === "__custom__") {
       custom.classList.remove("hidden");
+      custom.value = state.plannerModel;
       custom.focus();
-      persistPlannerModel(custom.value.trim());
-    } else {
-      custom.classList.add("hidden");
-      custom.value = "";
-      persistPlannerModel(value);
+      $("plannerModelHint").textContent = state.plannerModel
+        ? `설계 생성에 ${state.plannerModel} 모델을 사용합니다.`
+        : "Custom model ID를 입력하세요.";
+      return;
     }
 
+    custom.classList.add("hidden");
+    custom.value = "";
+    persistPlannerModel(value);
     renderPlannerModel(currentPlanner());
   });
 
