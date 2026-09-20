@@ -3,6 +3,7 @@ import unittest
 
 from app.planner import (
     PlannerError,
+    build_codex_exec_command,
     build_planner_prompt,
     parse_model_json,
     validate_planner_result,
@@ -94,6 +95,28 @@ class PlannerValidationTests(unittest.TestCase):
                 }
             )
 
+
+
+
+class CodexCommandTests(unittest.TestCase):
+    def test_global_flags_are_before_exec_subcommand(self):
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            __import__("pathlib").Path("/tmp/schema.json"),
+            __import__("pathlib").Path("/tmp/output.json"),
+            "Plan this repository",
+        )
+
+        exec_index = command.index("exec")
+        approval_index = command.index("--ask-for-approval")
+        sandbox_index = command.index("--sandbox")
+        output_schema_index = command.index("--output-schema")
+
+        self.assertLess(approval_index, exec_index)
+        self.assertLess(sandbox_index, exec_index)
+        self.assertGreater(output_schema_index, exec_index)
+        self.assertEqual(command[approval_index + 1], "never")
+        self.assertEqual(command[sandbox_index + 1], "read-only")
 
 class PlannerPromptTests(unittest.TestCase):
     def test_prompt_requires_repo_grounding_and_read_only_planning(self):
