@@ -351,8 +351,16 @@ async function generatePlan() {
     const effortLabel = result.reasoning_effort
       ? ` · ${result.reasoning_effort}`
       : "";
+    const budget = result.story_budget || {};
+    const sliceLabel = budget.reslice_passes
+      ? ` · 자동 재분해 ${budget.reslice_passes}회`
+      : "";
+    const budgetLabel = budget.status === "PASS"
+      ? ` · local-fit PASS (max ${budget.hard_max_paths || "?"} files)`
+      : "";
+
     $("plannerProgress").textContent =
-      `${planner.name} 설계 완료${modelLabel}${effortLabel} · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
+      `${planner.name} 설계 완료${modelLabel}${effortLabel} · ${result.stories?.length || 0} stories${sliceLabel}${budgetLabel} · ${result.elapsed_seconds ?? "?"}s`;
     toast("설계서와 Story가 생성되었습니다.");
   } catch (error) {
     $("plannerProgress").textContent = "Frontier planning failed. 로그/연결 상태를 확인하세요.";
