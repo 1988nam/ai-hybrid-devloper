@@ -18,7 +18,10 @@ repository-aware DESIGN.md + stories JSON
     ↓
 AI Hybrid Developer (browser)
     ↓
-existing local-coding-factory
+tracked Local Coding Factory source
+(factory/*.py)
+    ↓ install.sh
+local runtime at ~/local-coding-factory
     ↓
 Aider + local DEV model
     ↓
@@ -54,6 +57,8 @@ The dashboard never reads or copies OAuth token contents from either provider.
 ## What the dashboard does
 
 - Reads projects from `~/local-coding-factory/projects/*.toml`.
+- Ships the Local Coding Factory execution engine under `factory/` as Git-tracked source.
+- Installs/synchronizes `factory.py`, `runner.py`, and `guard_tests.py` into the local runtime without deleting runs, inbox packages, logs, or project config.
 - Lets a frontier planner inspect the configured project's current repository without editing it.
 - Generates and fills editable Title, Design Markdown, and Stories JSON fields.
 - Still accepts manually pasted or uploaded design/story artifacts.
@@ -70,7 +75,6 @@ The dashboard never reads or copies OAuth token contents from either provider.
 ```bash
 git clone https://github.com/1988nam/ai-hybrid-devloper.git
 cd ai-hybrid-devloper
-git switch feat/dashboard-v1
 bash scripts/install.sh
 ```
 
@@ -86,7 +90,7 @@ Then open:
 http://127.0.0.1:8787
 ```
 
-The dashboard expects the already-installed coding factory at `~/local-coding-factory` and the `factory` command in `PATH`.
+The installer creates or refreshes the Local Factory runtime at `~/local-coding-factory` (or `FACTORY_HOME`) and installs both `factory` and `ai-hybrid-developer` launchers under `~/.local/bin`. Existing runtime state and machine-specific project TOMLs are preserved.
 
 The frontier buttons appear even if a planner CLI is missing; the UI reports which optional CLI still needs to be installed.
 
@@ -121,7 +125,8 @@ TOML remains the project/runtime configuration format under `~/local-coding-fact
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 -m py_compile run.py app/*.py
+python3 -m py_compile run.py app/*.py factory/*.py
+bash -n scripts/install.sh
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component boundaries and state ownership.
