@@ -47,10 +47,63 @@
       <section id="view-run" class="view active">
         <div class="grid two-col">
           <article class="card package-card">
-            <div class="card-heading">
+            <section class="planner-panel">
+              <div class="card-heading planner-heading">
+                <div>
+                  <span class="kicker">FRONTIER PLANNER</span>
+                  <h2>요구사항에서 설계서 + Story 생성</h2>
+                </div>
+                <span class="planner-readonly">READ-ONLY REPO ANALYSIS</span>
+              </div>
+
+              <div class="provider-tabs" role="tablist" aria-label="Frontier planner provider">
+                <button id="plannerProviderCodex" class="provider-tab active" data-provider="codex" type="button">
+                  <span class="provider-logo codex-logo">O</span>
+                  <span>OpenAI Codex</span>
+                </button>
+                <button id="plannerProviderGemini" class="provider-tab" data-provider="gemini" type="button">
+                  <span class="provider-logo gemini-logo">G</span>
+                  <span>Gemini</span>
+                </button>
+              </div>
+
+              <div class="provider-status-row">
+                <div>
+                  <span id="plannerStatusDot" class="provider-status-dot"></span>
+                  <strong id="plannerStatusTitle">Checking provider…</strong>
+                  <span id="plannerStatusDetail" class="provider-status-detail"></span>
+                </div>
+                <div class="provider-actions">
+                  <button id="plannerRefreshBtn" class="button secondary small" type="button">Refresh</button>
+                  <button id="plannerConnectBtn" class="button secondary small" type="button">Connect</button>
+                  <button id="plannerLogoutBtn" class="button ghost small hidden" type="button">Logout</button>
+                </div>
+              </div>
+
+              <label class="field-label" for="plannerRequirement">Requirement</label>
+              <textarea
+                id="plannerRequirement"
+                class="planner-requirement"
+                spellcheck="false"
+                placeholder="예: Google 계정 전환 시 기존 설정과 히스토리는 계정별로 격리하고, 새 기기에서도 원본 연결을 복구하도록 개선해줘."
+              ></textarea>
+
+              <div class="planner-footer">
+                <span id="plannerProgress" class="hint">
+                  선택한 프론티어 모델이 실제 repository를 읽고 설계와 Story를 만듭니다.
+                </span>
+                <button id="generatePlanBtn" class="button primary" type="button">
+                  Repository 분석 + 설계 생성
+                </button>
+              </div>
+            </section>
+
+            <div class="section-divider"></div>
+
+            <div class="card-heading work-package-heading">
               <div>
-                <span class="kicker">NEW WORK PACKAGE</span>
-                <h2>설계서 + Story를 넘기세요</h2>
+                <span class="kicker">WORK PACKAGE</span>
+                <h2>생성 결과를 확인하고 Local Factory로 넘기세요</h2>
               </div>
             </div>
 
@@ -61,7 +114,7 @@
               <label class="field-label" for="designInput">Design specification (Markdown)</label>
               <label class="file-button">Load .md<input id="designFile" type="file" accept=".md,text/markdown,text/plain"></label>
             </div>
-            <textarea id="designInput" class="editor design" spellcheck="false" placeholder="프론티어 모델이 작성한 DESIGN.md 내용을 붙여넣으세요."></textarea>
+            <textarea id="designInput" class="editor design" spellcheck="false" placeholder="프론티어 모델의 DESIGN.md가 여기에 생성됩니다. 직접 수정하거나 기존 파일을 불러와도 됩니다."></textarea>
 
             <div class="editor-heading">
               <label class="field-label" for="storiesInput">Stories (JSON)</label>
@@ -70,7 +123,7 @@
             <textarea id="storiesInput" class="editor stories" spellcheck="false" placeholder='[{"id":"story-001","title":"...","prompt":"...","allowed_paths":["..."]}]'></textarea>
 
             <div class="package-footer">
-              <span id="storyValidation" class="hint">Story JSON을 입력하세요.</span>
+              <span id="storyValidation" class="hint">Story JSON을 입력하거나 Frontier Planner로 생성하세요.</span>
               <button id="startBtn" class="button primary">개발 시작</button>
             </div>
           </article>
@@ -108,10 +161,10 @@
             </article>
 
             <article class="card model-card">
-              <span class="kicker">ROLES</span>
+              <span class="kicker">LOCAL LOOP ROLES</span>
               <div class="model-row"><span>Developer</span><strong id="developerModel">-</strong></div>
               <div class="model-row"><span>Reviewer</span><strong id="reviewerModel">-</strong></div>
-              <p>Aider는 내부 edit executor로만 사용됩니다. 직접 조작할 필요가 없습니다.</p>
+              <p>Aider는 내부 edit executor로만 사용됩니다. 프론티어 모델은 설계에 집중하고 실제 반복 구현은 Local Factory가 수행합니다.</p>
             </article>
           </div>
         </div>

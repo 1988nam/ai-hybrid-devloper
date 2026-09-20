@@ -5,6 +5,10 @@ const state = {
   project: null,
   status: null,
   poller: null,
+  planners: [],
+  plannerProvider: "codex",
+  plannerLoginPoller: null,
+  planning: false,
 };
 
 async function api(path, options = {}) {
@@ -22,11 +26,15 @@ function toast(message, isError = false) {
   el.textContent = message;
   el.className = `toast show${isError ? " error" : ""}`;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { el.className = "toast"; }, 3000);
+  toast.timer = setTimeout(() => { el.className = "toast"; }, 3500);
 }
 
 function currentProject() {
   return state.projects.find((project) => project.name === state.project);
+}
+
+function currentPlanner() {
+  return state.planners.find((planner) => planner.id === state.plannerProvider);
 }
 
 async function loadProjects() {
@@ -45,10 +53,230 @@ async function loadProjects() {
   if (state.project) await refreshStatus();
 }
 
+async function loadPlanners() {
+  try {
+    const data = await api("/api/planners");
+    state.planners = data.providers || [];
+    renderPlanner();
+  } catch (error) {
+    state.planners = [];
+    renderPlanner(error.message);
+  }
+}
+
 function syncProjectMeta() {
   const project = currentProject();
   $("developerModel").textContent = project?.developer_model || "-";
   $("reviewerModel").textContent = project?.reviewer_model || "-";
+}
+
+function plannerConnectionLabel(planner) {
+  if (!planner) return "Provider status unavailable";
+  if (!planner.installed) return planner.detail || "CLI not installed";
+  if (!planner.connected) return planner.detail || "Not connected";
+
+  const parts = [];
+  if (planner.plan) parts.push(planner.plan);
+  if (planner.email) parts.push(planner.email);
+  if (planner.auth_mode) parts.push(planner.auth_mode);
+  return parts.length ? parts.join(" · ") : (planner.detail || "Connected");
+}
+
+function renderPlanner(error = "") {
+  document.querySelectorAll(".provider-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.provider === state.plannerProvider);
+  });
+
+  const planner = currentPlanner();
+  const dot = $("plannerStatusDot");
+  const title = $("plannerStatusTitle");
+  const detail = $("plannerStatusDetail");
+  const connect = $("plannerConnectBtn");
+  const logout = $("plannerLogoutBtn");
+  const generate = $("generatePlanBtn");
+
+  if (error) {
+    dot.className = "provider-status-dot error";
+    title.textContent = "Provider status error";
+    detail.textContent = error;
+    connect.disabled = false;
+    generate.disabled = state.planning;
+    return;
+  }
+
+  if (!planner) {
+    dot.className = "provider-status-dot";
+    title.textContent = "Checking provider…";
+    detail.textContent = "";
+    connect.disabled = true;
+    generate.disabled = true;
+    return;
+  }
+
+  if (!planner.installed) {
+    dot.className = "provider-status-dot error";
+    title.textContent = `${planner.name} CLI not installed`;
+  } else if (planner.connected) {
+    dot.className = "provider-status-dot connected";
+    title.textContent = `${planner.name} connected`;
+  } else {
+    dot.className = "provider-status-dot";
+    title.textContent = `${planner.name} not connected`;
+  }
+
+  detail.textContent = plannerConnectionLabel(planner);
+  connect.disabled = !planner.installed || state.planning;
+  connect.textContent = planner.connected
+    ? (state.plannerProvider === "codex" ? "Reconnect" : "Sign in again")
+    : "Connect";
+
+  logout.classList.toggle(
+    "hidden",
+    state.plannerProvider !== "codex" || !planner.connected,
+  );
+  logout.disabled = state.planning;
+
+  generate.disabled = !planner.installed || !planner.connected || state.planning;
+}
+
+function selectPlanner(provider) {
+  if (!["codex", "gemini"].includes(provider)) return;
+  state.plannerProvider = provider;
+  renderPlanner();
+}
+
+async function connectPlanner() {
+  const planner = currentPlanner();
+  if (!planner?.installed) {
+    toast(`${planner?.name || "Planner"} CLI가 설치되어 있지 않습니다.`, true);
+    return;
+  }
+
+  try {
+    if (state.plannerProvider === "codex") {
+      $("plannerProgress").textContent = "ChatGPT OAuth를 시작합니다…";
+      const result = await api("/api/planners/codex/connect", {
+        method: "POST",
+        body: "{}",
+      });
+
+      if (result.auth_url) {
+        window.open(result.auth_url, "_blank", "noopener,noreferrer");
+      }
+
+      clearInterval(state.plannerLoginPoller);
+      state.plannerLoginPoller = setInterval(pollCodexLogin, 1500);
+      await pollCodexLogin();
+      return;
+    }
+
+    $("plannerProgress").textContent =
+      "Gemini CLI 로그인 창을 엽니다. 처음 한 번 Google 계정 로그인을 완료하세요.";
+    const result = await api("/api/planners/gemini/connect", {
+      method: "POST",
+      body: JSON.stringify({ project: state.project }),
+    });
+    toast(result.detail || "Gemini login window opened");
+  } catch (error) {
+    $("plannerProgress").textContent = "Planner 연결 실패";
+    toast(error.message, true);
+  }
+}
+
+async function pollCodexLogin() {
+  try {
+    const result = await api("/api/planners/codex/login-status");
+    if (result.pending) {
+      $("plannerProgress").textContent =
+        "ChatGPT 로그인 완료를 기다리는 중입니다. 브라우저 OAuth를 완료하세요.";
+      return;
+    }
+
+    clearInterval(state.plannerLoginPoller);
+    state.plannerLoginPoller = null;
+
+    if (!result.connected) {
+      throw new Error(result.error || "Codex ChatGPT login failed");
+    }
+
+    $("plannerProgress").textContent = "OpenAI Codex 연결 완료.";
+    toast("OpenAI Codex connected");
+    await loadPlanners();
+  } catch (error) {
+    clearInterval(state.plannerLoginPoller);
+    state.plannerLoginPoller = null;
+    $("plannerProgress").textContent = "Codex 로그인 상태 확인 실패";
+    toast(error.message, true);
+  }
+}
+
+async function logoutCodex() {
+  try {
+    await api("/api/planners/codex/logout", {
+      method: "POST",
+      body: "{}",
+    });
+    toast("Codex logged out");
+    await loadPlanners();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function generatePlan() {
+  if (!state.project) {
+    toast("Project를 먼저 선택하세요.", true);
+    return;
+  }
+
+  const requirement = $("plannerRequirement").value.trim();
+  if (!requirement) {
+    toast("요구사항을 입력하세요.", true);
+    $("plannerRequirement").focus();
+    return;
+  }
+
+  const planner = currentPlanner();
+  if (!planner?.connected) {
+    toast("선택한 Frontier Planner를 먼저 연결하세요.", true);
+    return;
+  }
+
+  state.planning = true;
+  renderPlanner();
+  const button = $("generatePlanBtn");
+  button.textContent = "Repository 분석 중…";
+  $("plannerProgress").textContent =
+    `${planner.name}이 repository를 read-only로 조사하고 설계와 Story를 생성하고 있습니다…`;
+
+  try {
+    const result = await api(
+      `/api/projects/${encodeURIComponent(state.project)}/plan`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          provider: state.plannerProvider,
+          requirement,
+        }),
+      },
+    );
+
+    $("titleInput").value = result.title || "";
+    $("designInput").value = result.design_markdown || "";
+    $("storiesInput").value = JSON.stringify(result.stories || [], null, 2);
+    validateStoriesUi();
+
+    $("plannerProgress").textContent =
+      `${planner.name} 설계 완료 · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
+    toast("설계서와 Story가 생성되었습니다.");
+  } catch (error) {
+    $("plannerProgress").textContent = "Frontier planning failed. 로그/연결 상태를 확인하세요.";
+    toast(error.message, true);
+  } finally {
+    state.planning = false;
+    button.textContent = "Repository 분석 + 설계 생성";
+    renderPlanner();
+  }
 }
 
 function statusLabel(status) {
@@ -227,6 +455,16 @@ function bind() {
     syncProjectMeta();
     await refreshStatus();
   });
+
+  document.querySelectorAll(".provider-tab").forEach((button) => {
+    button.addEventListener("click", () => selectPlanner(button.dataset.provider));
+  });
+
+  $("plannerRefreshBtn").addEventListener("click", loadPlanners);
+  $("plannerConnectBtn").addEventListener("click", connectPlanner);
+  $("plannerLogoutBtn").addEventListener("click", logoutCodex);
+  $("generatePlanBtn").addEventListener("click", generatePlan);
+
   $("designFile").addEventListener("change", (event) => loadFile(event.target, "designInput"));
   $("storiesFile").addEventListener("change", (event) => loadFile(event.target, "storiesInput"));
   $("storiesInput").addEventListener("input", validateStoriesUi);
@@ -236,6 +474,7 @@ function bind() {
   $("refreshLogsBtn").addEventListener("click", refreshLogs);
   $("refreshDiffBtn").addEventListener("click", refreshDiff);
   $("openVscodeBtn").addEventListener("click", () => postAction("open-vscode"));
+
   document
     .querySelectorAll(".nav-item")
     .forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
@@ -244,7 +483,7 @@ function bind() {
 async function boot() {
   bind();
   try {
-    await loadProjects();
+    await Promise.all([loadProjects(), loadPlanners()]);
   } catch (error) {
     $("healthText").textContent = error.message;
     toast(error.message, true);

@@ -1,42 +1,69 @@
 # AI Hybrid Developer
 
-A local browser Agent for the hybrid development workflow you already built.
+A local browser Agent for a hybrid development workflow.
 
 **Frontier models plan. Local models loop until the code is verified.**
 
-The browser UI is the human control plane. Aider stays hidden inside the backend as an edit executor; you do not interact with it directly.
+The browser is the human control plane. Aider stays hidden inside the backend as an edit executor; you do not interact with it directly.
 
 ## Workflow
 
 ```text
-ChatGPT / Claude / Codex
-        ↓
-  DESIGN.md + stories JSON
-        ↓
+Requirement
+    ↓
+OpenAI Codex (ChatGPT login)
+or Gemini CLI (Google login)
+    ↓
+repository-aware DESIGN.md + stories JSON
+    ↓
 AI Hybrid Developer (browser)
-        ↓
+    ↓
 existing local-coding-factory
-        ↓
+    ↓
 Aider + local DEV model
-        ↓
+    ↓
 tests / build / custom gates
-        ↓
+    ↓
 independent local REVIEW model
-        ↓
+    ↓
 retry / commit / checkpoint / resume
 ```
 
-## What v1 does
+## Frontier Planner
+
+The Run screen can now generate the work package directly from a plain-language requirement.
+
+### OpenAI Codex
+
+- Uses the official Codex CLI already installed on the WSL host.
+- The dashboard can start the official ChatGPT OAuth flow through `codex app-server`.
+- The saved Codex login is reused by non-interactive `codex exec`.
+- Planning runs in an explicit read-only Codex sandbox with approvals disabled.
+- Codex structured output is constrained to the work-package schema.
+
+### Gemini
+
+- Uses the official Gemini CLI on the WSL host.
+- The dashboard reuses the Gemini CLI's own cached authentication.
+- For a first-time Google login, the Connect action opens a Gemini CLI terminal; choose **Sign in with Google** there once.
+- Subsequent planning runs are non-interactive and use JSON output.
+- Planning runs with Gemini CLI approval mode `plan`.
+
+The dashboard never reads or copies OAuth token contents from either provider.
+
+## What the dashboard does
 
 - Reads projects from `~/local-coding-factory/projects/*.toml`.
-- Accepts a Markdown design specification and a JSON story queue.
+- Lets a frontier planner inspect the configured project's current repository without editing it.
+- Generates and fills editable Title, Design Markdown, and Stories JSON fields.
+- Still accepts manually pasted or uploaded design/story artifacts.
 - Archives every submitted work package.
 - Compiles the shared design into each runtime story so local models receive the frontier-model decisions.
 - Starts the existing `factory run` backend as a detached local process.
 - Shows run status, Story progress, logs, and the integration diff.
 - Supports Stop and Resume.
 - Optionally opens the integration worktree in VS Code as an escape hatch.
-- Uses only the Python standard library for the web server.
+- Uses only the Python standard library for the web/control-plane server.
 
 ## Install on WSL Ubuntu
 
@@ -61,15 +88,18 @@ http://127.0.0.1:8787
 
 The dashboard expects the already-installed coding factory at `~/local-coding-factory` and the `factory` command in `PATH`.
 
+The frontier buttons appear even if a planner CLI is missing; the UI reports which optional CLI still needs to be installed.
+
 ## Work package format
 
-The frontend accepts two frontier-model artifacts.
+The frontend stores frontier-model output as a package containing:
 
-### `design.md`
+- `design.md` — shared architecture/design context.
+- `stories.source.json` — the editable frontier story queue.
+- `stories.json` — runtime stories with the design context compiled into each prompt.
+- `package.toml` — package metadata.
 
-Human/LLM architecture context: goals, constraints, decisions, non-goals, acceptance criteria, and shared design rules.
-
-### Stories JSON
+A Story looks like:
 
 ```json
 [
