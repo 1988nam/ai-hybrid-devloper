@@ -9,6 +9,8 @@ const state = {
   plannerProvider: "codex",
   plannerLoginPoller: null,
   plannerModel: localStorage.getItem("aiHybridCodexModel") || "",
+  plannerReasoningEffort:
+    localStorage.getItem("aiHybridCodexReasoningEffort") || "",
   planning: false,
 };
 
@@ -88,6 +90,14 @@ function persistPlannerModel(value) {
   localStorage.setItem("aiHybridCodexModel", state.plannerModel);
 }
 
+function persistPlannerReasoningEffort(value) {
+  state.plannerReasoningEffort = value || "";
+  localStorage.setItem(
+    "aiHybridCodexReasoningEffort",
+    state.plannerReasoningEffort,
+  );
+}
+
 function renderPlannerModel(planner) {
   const row = $("codexModelRow");
   const select = $("plannerModelSelect");
@@ -119,6 +129,32 @@ function renderPlannerModel(planner) {
   hint.textContent = selected
     ? `설계 생성에 ${selected} 모델을 사용합니다.`
     : "Codex CLI의 기본 모델을 사용합니다.";
+
+  const effortSelect = $("plannerEffortSelect");
+  const effortHint = $("plannerEffortHint");
+  const efforts = Array.isArray(planner?.reasoning_efforts)
+    ? planner.reasoning_efforts
+    : [];
+  const effort = state.plannerReasoningEffort || "";
+
+  if (efforts.length) {
+    effortSelect.innerHTML = efforts
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.id || "Codex default")}</option>`,
+      )
+      .join("");
+  }
+
+  effortSelect.value = effort;
+  if (effortSelect.value !== effort) {
+    effortSelect.value = "";
+    persistPlannerReasoningEffort("");
+  }
+
+  effortHint.textContent = state.plannerReasoningEffort
+    ? `추론 수준: ${state.plannerReasoningEffort}`
+    : "모델의 기본 추론 수준을 사용합니다.";
 }
 
 function renderPlanner(error = "") {
@@ -298,6 +334,10 @@ async function generatePlan() {
           provider: state.plannerProvider,
           requirement,
           model: state.plannerProvider === "codex" ? state.plannerModel : "",
+          reasoning_effort:
+            state.plannerProvider === "codex"
+              ? state.plannerReasoningEffort
+              : "",
         }),
       },
     );
@@ -308,8 +348,11 @@ async function generatePlan() {
     validateStoriesUi();
 
     const modelLabel = result.model ? ` · ${result.model}` : "";
+    const effortLabel = result.reasoning_effort
+      ? ` · ${result.reasoning_effort}`
+      : "";
     $("plannerProgress").textContent =
-      `${planner.name} 설계 완료${modelLabel} · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
+      `${planner.name} 설계 완료${modelLabel}${effortLabel} · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
     toast("설계서와 Story가 생성되었습니다.");
   } catch (error) {
     $("plannerProgress").textContent = "Frontier planning failed. 로그/연결 상태를 확인하세요.";
@@ -527,6 +570,13 @@ function bind() {
     $("plannerModelHint").textContent = state.plannerModel
       ? `설계 생성에 ${state.plannerModel} 모델을 사용합니다.`
       : "Custom model ID를 입력하세요.";
+  });
+
+  $("plannerEffortSelect").addEventListener("change", (event) => {
+    persistPlannerReasoningEffort(event.target.value);
+    $("plannerEffortHint").textContent = state.plannerReasoningEffort
+      ? `추론 수준: ${state.plannerReasoningEffort}`
+      : "모델의 기본 추론 수준을 사용합니다.";
   });
 
   $("plannerRefreshBtn").addEventListener("click", loadPlanners);
