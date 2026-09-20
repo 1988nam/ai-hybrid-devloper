@@ -170,7 +170,7 @@ class CodexModelTests(unittest.TestCase):
         model_index = command.index("--model")
         exec_index = command.index("exec")
 
-        self.assertLess(model_index, exec_index)
+        self.assertGreater(model_index, exec_index)
         self.assertEqual(command[model_index + 1], "gpt-5.6-sol")
 
     def test_default_model_omits_model_flag(self):
