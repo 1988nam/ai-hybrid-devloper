@@ -1057,6 +1057,127 @@ class PlannerService:
             return self._generate_gemini(repo, prompt)
         raise PlannerError(f"unsupported planner provider: {provider}")
 
+    def reslice_existing(
+        self,
+        *,
+        provider: str,
+        project_name: str,
+        source_repo: str,
+        title: str,
+        design_markdown: str,
+        stories: Any,
+        requirement: str = "",
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> dict[str, Any]:
+        """Re-slice an imported MD + JSON package without needing the original request."""
+        repo = Path(source_repo).expanduser().resolve()
+        if not repo.exists():
+            raise PlannerError(f"project repository not found: {repo}")
+
+        design = design_markdown.strip()
+        if not design:
+            raise PlannerError("기존 Design Markdown을 먼저 불러오세요.")
+
+        resolved_title = title.strip()
+        if not resolved_title:
+            for line in design.splitlines():
+                line = line.strip()
+                if line.startswith("# "):
+                    resolved_title = line[2:].strip()
+                    break
+        if not resolved_title:
+            resolved_title = "Imported work package"
+
+        package = validate_planner_result(
+            {
+                "title": resolved_title,
+                "design_markdown": design,
+                "stories": stories,
+            }
+        )
+
+        locked_title = package["title"]
+        locked_design = package["design_markdown"]
+        current_stories = package["stories"]
+        source_story_count = len(current_stories)
+
+        before = self._git_status(repo)
+        started = time.monotonic()
+        logs: list[str] = []
+
+        violations = story_budget_violations(current_stories, repo)
+        reasons = violations or [
+            "Manual MD+JSON re-slice requested: optimize this already-valid queue "
+            "for smaller local Qwen/Aider execution units."
+        ]
+
+        reslice_passes = 0
+        while reasons and reslice_passes < LOCAL_STORY_MAX_RESLICE_PASSES:
+            reslice_passes += 1
+            slicer_prompt = build_story_slicer_prompt(
+                requirement.strip()
+                or (
+                    "No separate original requirement text is available. "
+                    "Treat the locked Design Markdown as the authoritative product "
+                    "requirement and preserve it exactly."
+                ),
+                project_name,
+                locked_title,
+                locked_design,
+                current_stories,
+                reasons,
+            )
+
+            sliced, slice_log = self._generate_for_provider(
+                provider=provider,
+                repo=repo,
+                prompt=slicer_prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            )
+            logs.append(str(slice_log))
+
+            current_stories = sliced["stories"]
+            violations = story_budget_violations(current_stories, repo)
+            reasons = violations
+
+        if violations:
+            raise PlannerError(
+                "기존 MD+JSON을 Frontier가 재분해했지만 local story budget을 "
+                f"{LOCAL_STORY_MAX_RESLICE_PASSES}회 안에 만족하지 못했습니다.\n"
+                + format_story_budget_violations(violations)
+            )
+
+        after = self._git_status(repo)
+        if after != before:
+            raise PlannerError(
+                "Frontier Story Slicer가 read-only 규칙을 어기고 repository 상태를 "
+                f"변경했습니다. 변경사항은 자동 적용하지 않았습니다. 로그: {logs[-1]}"
+            )
+
+        return {
+            "title": locked_title,
+            "design_markdown": locked_design,
+            "stories": current_stories,
+            "provider": provider,
+            "model": (model or "").strip() or None,
+            "reasoning_effort": (reasoning_effort or "").strip() or None,
+            "elapsed_seconds": round(time.monotonic() - started, 1),
+            "log": logs[-1] if logs else None,
+            "logs": logs,
+            "story_budget": {
+                "status": "PASS",
+                "target_max_paths": LOCAL_STORY_TARGET_MAX_PATHS,
+                "hard_max_paths": LOCAL_STORY_HARD_MAX_PATHS,
+                "max_new_files": LOCAL_STORY_MAX_NEW_FILES,
+                "reslice_passes": reslice_passes,
+                "source_story_count": source_story_count,
+                "story_count": len(current_stories),
+                "mode": "imported-package-reslice",
+            },
+        }
+
     def generate(
         self,
         *,
