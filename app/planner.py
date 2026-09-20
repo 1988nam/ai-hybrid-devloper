@@ -19,10 +19,11 @@ class PlannerError(RuntimeError):
 
 
 CODEX_MODEL_OPTIONS = [
-    {"id": "gpt-5.6", "label": "GPT-5.6"},
+    {"id": "gpt-6-astra", "label": "GPT-6 Astra"},
     {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol"},
     {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra"},
     {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna"},
+    {"id": "gpt-5.3-codex-spark", "label": "GPT-5.3 Codex Spark"},
 ]
 
 
@@ -323,13 +324,14 @@ def build_codex_exec_command(
     prompt: str,
     model: str | None = None,
 ) -> list[str]:
-    """Build Codex command with global options before the exec subcommand."""
+    """Build a read-only Codex exec command with an optional explicit model."""
     command = [
         executable,
         "--sandbox",
         "read-only",
         "--ask-for-approval",
         "never",
+        "exec",
     ]
 
     selected_model = (model or "").strip()
@@ -338,7 +340,6 @@ def build_codex_exec_command(
 
     command.extend(
         [
-            "exec",
             "--ephemeral",
             "--output-schema",
             str(schema_path),
