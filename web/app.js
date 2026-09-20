@@ -575,9 +575,12 @@ async function startRun() {
         }),
       },
     );
-    toast(`Started ${result.package.story_count} stories`);
-    await refreshStatus();
+    toast(
+      `Fresh run started · ${result.package.story_count} stories` +
+        (result.archived_current ? " · previous run archived" : ""),
+    );
     switchView("logs");
+    setTimeout(refreshStatus, 500);
   } catch (error) {
     toast(error.message, true);
   }
