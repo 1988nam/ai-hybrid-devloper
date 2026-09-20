@@ -287,19 +287,23 @@ main { padding: 28px 34px 60px; min-width: 0; }
   background: rgba(9,10,13,.38);
 }
 .planner-config-row .field-label { margin: 0 0 5px; }
+.planner-config-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.planner-config-field select,
+.planner-config-field input {
+  width: 100%;
+}
 .config-hint {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
   line-height: 1.45;
 }
-.planner-model-controls {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr);
-  gap: 8px;
-}
-.planner-model-controls select,
-.planner-model-controls input {
+.planner-config-field select,
+.planner-config-field input {
   height: 40px;
 }
 
