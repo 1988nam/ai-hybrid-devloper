@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from .core import ConflictError, ControlPlaneError, FactoryControl, Settings
+from .planner import PlannerError, PlannerService
+from .planner_api import PlannerApi
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +24,7 @@ MAX_BODY = 10 * 1024 * 1024
 
 class DashboardHandler(SimpleHTTPRequestHandler):
     control: FactoryControl
+    planner_api: PlannerApi
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
@@ -66,6 +69,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         try:
             parts = self._segments(parsed.path)
+
+            planner_response = self.planner_api.get(parts)
+            if planner_response is not None:
+                status, payload = planner_response
+                return self._json(status, payload)
+
             if parts == ["api", "health"]:
                 return self._json(
                     HTTPStatus.OK,
@@ -76,31 +85,58 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     },
                 )
             if parts == ["api", "projects"]:
-                return self._json(HTTPStatus.OK, {"projects": self.control.list_projects()})
+                return self._json(
+                    HTTPStatus.OK,
+                    {"projects": self.control.list_projects()},
+                )
             if len(parts) == 4 and parts[:2] == ["api", "projects"]:
                 project, action = parts[2], parts[3]
                 if action == "status":
-                    return self._json(HTTPStatus.OK, self.control.status(project))
+                    return self._json(
+                        HTTPStatus.OK,
+                        self.control.status(project),
+                    )
                 if action == "logs":
-                    return self._json(HTTPStatus.OK, self.control.logs(project))
+                    return self._json(
+                        HTTPStatus.OK,
+                        self.control.logs(project),
+                    )
                 if action == "diff":
-                    return self._json(HTTPStatus.OK, self.control.diff(project))
-            return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown API route"})
-        except ControlPlaneError as exc:
+                    return self._json(
+                        HTTPStatus.OK,
+                        self.control.diff(project),
+                    )
+            return self._json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "unknown API route"},
+            )
+        except (ControlPlaneError, PlannerError) as exc:
             return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:
             print(f"API error: {exc!r}", file=sys.stderr)
-            return self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            return self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": str(exc)},
+            )
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         try:
             parts = self._segments(parsed.path)
+            body = self._read_json()
+
+            planner_response = self.planner_api.post(parts, body)
+            if planner_response is not None:
+                status, payload = planner_response
+                return self._json(status, payload)
+
             if len(parts) != 4 or parts[:2] != ["api", "projects"]:
-                return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown API route"})
+                return self._json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "unknown API route"},
+                )
 
             project, action = parts[2], parts[3]
-            body = self._read_json()
 
             if action == "runs":
                 result = self.control.start_run(
@@ -111,20 +147,35 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 )
                 return self._json(HTTPStatus.ACCEPTED, result)
             if action == "resume":
-                return self._json(HTTPStatus.ACCEPTED, self.control.resume(project))
+                return self._json(
+                    HTTPStatus.ACCEPTED,
+                    self.control.resume(project),
+                )
             if action == "stop":
-                return self._json(HTTPStatus.OK, self.control.stop(project))
+                return self._json(
+                    HTTPStatus.OK,
+                    self.control.stop(project),
+                )
             if action == "open-vscode":
-                return self._json(HTTPStatus.OK, self.control.open_vscode(project))
+                return self._json(
+                    HTTPStatus.OK,
+                    self.control.open_vscode(project),
+                )
 
-            return self._json(HTTPStatus.NOT_FOUND, {"error": "unknown API route"})
+            return self._json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "unknown API route"},
+            )
         except ConflictError as exc:
             return self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
-        except ControlPlaneError as exc:
+        except (ControlPlaneError, PlannerError) as exc:
             return self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:
             print(f"API error: {exc!r}", file=sys.stderr)
-            return self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            return self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": str(exc)},
+            )
 
 
 def open_browser(url: str) -> None:
@@ -149,9 +200,20 @@ def shutil_which(command: str) -> str | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ai-hybrid-developer")
-    parser.add_argument("--host", default=os.environ.get("AI_HYBRID_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("AI_HYBRID_PORT", "8787")))
-    parser.add_argument("--open", action="store_true", help="open the dashboard in the default browser")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("AI_HYBRID_HOST", "127.0.0.1"),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("AI_HYBRID_PORT", "8787")),
+    )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="open the dashboard in the default browser",
+    )
     return parser
 
 
@@ -159,14 +221,21 @@ def main() -> int:
     args = build_parser().parse_args()
     settings = Settings.from_env()
     control = FactoryControl(settings)
+    planner = PlannerService(settings.state_home)
+
     DashboardHandler.control = control
+    DashboardHandler.planner_api = PlannerApi(control, planner)
 
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
     url = f"http://{args.host}:{args.port}"
     print("AI Hybrid Developer")
     print(f"Dashboard: {url}")
     print(f"Factory home: {settings.factory_home}")
-    print("Press Ctrl+C to stop the web control plane. Factory jobs run in their own process group.")
+    print("Frontier planners: OpenAI Codex + Gemini CLI")
+    print(
+        "Press Ctrl+C to stop the web control plane. "
+        "Factory jobs run in their own process group."
+    )
 
     if args.open:
         open_browser(url)
