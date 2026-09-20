@@ -18,6 +18,14 @@ class PlannerError(RuntimeError):
     """Expected, user-facing frontier planner error."""
 
 
+CODEX_MODEL_OPTIONS = [
+    {"id": "gpt-5.6", "label": "GPT-5.6"},
+    {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol"},
+    {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra"},
+    {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna"},
+]
+
+
 PLANNER_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -313,22 +321,33 @@ def build_codex_exec_command(
     schema_path: Path,
     output_path: Path,
     prompt: str,
+    model: str | None = None,
 ) -> list[str]:
-    """Build Codex command with global approval/sandbox flags before the exec subcommand."""
-    return [
+    """Build Codex command with global options before the exec subcommand."""
+    command = [
         executable,
         "--sandbox",
         "read-only",
         "--ask-for-approval",
         "never",
-        "exec",
-        "--ephemeral",
-        "--output-schema",
-        str(schema_path),
-        "--output-last-message",
-        str(output_path),
-        prompt,
     ]
+
+    selected_model = (model or "").strip()
+    if selected_model:
+        command.extend(["--model", selected_model])
+
+    command.extend(
+        [
+            "exec",
+            "--ephemeral",
+            "--output-schema",
+            str(schema_path),
+            "--output-last-message",
+            str(output_path),
+            prompt,
+        ]
+    )
+    return command
 
 
 class CodexAppServer:
@@ -459,6 +478,7 @@ class PlannerService:
                 "connected": False,
                 "auth_mode": None,
                 "plan": None,
+                "models": CODEX_MODEL_OPTIONS,
                 "detail": "Codex CLI is not installed",
             }
 
@@ -500,6 +520,7 @@ class PlannerService:
             "auth_mode": auth_mode,
             "plan": plan,
             "email": email,
+            "models": CODEX_MODEL_OPTIONS,
             "detail": text or ("Connected" if connected else "Not logged in"),
         }
 
@@ -733,7 +754,12 @@ class PlannerService:
         )
         return path
 
-    def _generate_codex(self, repo: Path, prompt: str) -> tuple[dict[str, Any], Path]:
+    def _generate_codex(
+        self,
+        repo: Path,
+        prompt: str,
+        model: str | None = None,
+    ) -> tuple[dict[str, Any], Path]:
         executable = shutil.which("codex")
         if not executable:
             raise PlannerError("Codex CLI가 설치되어 있지 않습니다.")
@@ -749,6 +775,7 @@ class PlannerService:
                 schema_path,
                 output_path,
                 prompt,
+                model,
             )
             result = _run(command, cwd=repo, timeout=1200)
             log = self._write_log("codex", result.stdout, result.stderr)
@@ -823,6 +850,7 @@ class PlannerService:
         project_name: str,
         source_repo: str,
         requirement: str,
+        model: str | None = None,
     ) -> dict[str, Any]:
         repo = Path(source_repo).expanduser().resolve()
         if not repo.exists():
@@ -833,7 +861,7 @@ class PlannerService:
         started = time.monotonic()
 
         if provider == "codex":
-            result, log = self._generate_codex(repo, prompt)
+            result, log = self._generate_codex(repo, prompt, model)
         elif provider == "gemini":
             result, log = self._generate_gemini(repo, prompt)
         else:
@@ -849,6 +877,7 @@ class PlannerService:
         return {
             **result,
             "provider": provider,
+            "model": (model or "").strip() or None,
             "elapsed_seconds": round(time.monotonic() - started, 1),
             "log": str(log),
         }
