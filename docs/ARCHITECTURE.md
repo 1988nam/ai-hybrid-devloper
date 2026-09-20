@@ -85,6 +85,28 @@ Every provider is normalized to:
 
 The UI keeps generated output editable. The human can adjust the design or Story queue before pressing **개발 시작**.
 
+### Local execution story budget
+
+Frontier planning is optimized for the smaller local coding model rather than for the
+fewest possible Stories.
+
+- target: 2-4 editable files per Story
+- hard maximum: 5 `allowed_paths` entries, including tests
+- maximum: 2 new files in one Story
+- `allowed_paths` is an edit-permission list, not read context
+- abstraction introduction and mass consumer migration must be separate Stories
+- VM/test-harness compatibility must precede migrations that depend on a new runtime/helper
+- storage/config, diary generation, photos/Drive, auth/session, build, worker/API,
+  portal/navigation, service worker, browser regression, and docs are separate concerns
+- base `npm test` and `npm run build` are not repeated in `verify_commands`
+- repo paths are literal strings; regex-style escaping such as `sw\\.js` is rejected
+
+After the first frontier plan, the dashboard validates the Story queue deterministically.
+If any Story violates the local budget, the same frontier provider is automatically called
+again as a **Story Slicer**. The architecture title/design are locked; only Story
+partitioning may change. At most two automatic re-slicing passes are attempted. A queue
+that still violates the hard budget is rejected before Local Factory starts.
+
 ## Local loop plane
 
 The existing coding factory remains authoritative for:
