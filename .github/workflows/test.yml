@@ -14,3 +14,4 @@ jobs:
           python-version: "3.14"
       - run: python3 -m unittest discover -s tests -v
       - run: python3 -m py_compile run.py app/*.py
+      - run: node --check web/app.js

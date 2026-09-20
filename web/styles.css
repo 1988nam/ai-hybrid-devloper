@@ -275,6 +275,38 @@ main { padding: 28px 34px 60px; min-width: 0; }
 }
 .provider-status-dot.error { background: var(--danger); }
 
+.planner-config-row {
+  display: grid;
+  grid-template-columns: minmax(180px, .65fr) minmax(260px, 1.35fr);
+  gap: 16px;
+  align-items: end;
+  padding: 13px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(9,10,13,.38);
+}
+.planner-config-row .field-label { margin: 0 0 5px; }
+.planner-config-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.planner-config-field select,
+.planner-config-field input {
+  width: 100%;
+}
+.config-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.planner-config-field select,
+.planner-config-field input {
+  height: 40px;
+}
+
 .planner-panel .field-label { display: block; margin: 0 0 7px; }
 .planner-requirement {
   min-height: 118px;
@@ -311,7 +343,40 @@ main { padding: 28px 34px 60px; min-width: 0; }
   margin-top: 16px;
 }
 .editor-heading .field-label { margin: 0; }
-.file-button { color: var(--accent-2); font-size: 12px; cursor: pointer; }
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #3a4050;
+  border-radius: 9px;
+  background: #1a1d25;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.file-button:hover,
+.file-button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(139,124,255,.12);
+  outline: none;
+}
+.file-button:active { transform: translateY(1px); }
+.file-button-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(139,124,255,.16);
+  color: var(--accent-2);
+  font-size: 13px;
+  line-height: 1;
+}
 .file-button input { display: none; }
 .package-footer {
   display: flex;
@@ -444,6 +509,7 @@ main { padding: 28px 34px 60px; min-width: 0; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .planner-footer,
   .provider-status-row { align-items: stretch; flex-direction: column; }
+  .planner-config-row { grid-template-columns: 1fr; }
   .planner-footer .hint { max-width: none; }
   .provider-status-detail { max-width: 100%; }
 }

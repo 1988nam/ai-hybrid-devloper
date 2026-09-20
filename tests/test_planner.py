@@ -155,6 +155,73 @@ class CodexCommandTests(unittest.TestCase):
         self.assertEqual(command[sandbox_index + 1], "read-only")
 
 
+class CodexModelTests(unittest.TestCase):
+    def test_selected_model_is_passed_to_exec(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+        )
+
+        model_index = command.index("--model")
+        exec_index = command.index("exec")
+
+        self.assertGreater(model_index, exec_index)
+        self.assertEqual(command[model_index + 1], "gpt-5.6-sol")
+
+    def test_default_model_omits_model_flag(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+        )
+
+        self.assertNotIn("--model", command)
+
+
+class CodexReasoningEffortTests(unittest.TestCase):
+    def test_selected_reasoning_effort_is_passed_as_global_config(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+            "high",
+        )
+
+        config_index = command.index("--config")
+        exec_index = command.index("exec")
+
+        self.assertLess(config_index, exec_index)
+        self.assertEqual(
+            command[config_index + 1],
+            'model_reasoning_effort="high"',
+        )
+
+    def test_default_reasoning_effort_omits_config_override(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+        )
+
+        self.assertNotIn("--config", command)
+
+
 class PlannerPromptTests(unittest.TestCase):
     def test_prompt_requires_repo_grounding_and_read_only_planning(self):
         prompt = build_planner_prompt(

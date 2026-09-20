@@ -80,6 +80,40 @@
                 </div>
               </div>
 
+              <div id="codexModelRow" class="planner-config-row">
+                <div class="planner-config-field">
+                  <label class="field-label" for="plannerModelSelect">Codex model</label>
+                  <select id="plannerModelSelect" aria-label="Codex model">
+                    <option value="">Codex default</option>
+                  </select>
+                  <input
+                    id="plannerCustomModel"
+                    class="hidden"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Custom model ID"
+                    aria-label="Custom Codex model ID"
+                  >
+                  <p id="plannerModelHint" class="config-hint">Codex 기본 모델을 사용합니다.</p>
+                </div>
+
+                <div class="planner-config-field">
+                  <label class="field-label" for="plannerEffortSelect">Reasoning effort</label>
+                  <select id="plannerEffortSelect" aria-label="Codex reasoning effort">
+                    <option value="">Codex default</option>
+                    <option value="minimal">Minimal</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="xhigh">Extra High</option>
+                  </select>
+                  <p id="plannerEffortHint" class="config-hint">
+                    모델의 기본 추론 수준을 사용합니다.
+                  </p>
+                </div>
+              </div>
+
               <label class="field-label" for="plannerRequirement">Requirement</label>
               <textarea
                 id="plannerRequirement"
@@ -112,13 +146,21 @@
 
             <div class="editor-heading">
               <label class="field-label" for="designInput">Design specification (Markdown)</label>
-              <label class="file-button">Load .md<input id="designFile" type="file" accept=".md,text/markdown,text/plain"></label>
+              <label class="file-button" role="button" tabindex="0">
+                <span class="file-button-icon" aria-hidden="true">↑</span>
+                MD 파일 불러오기
+                <input id="designFile" type="file" accept=".md,text/markdown,text/plain">
+              </label>
             </div>
             <textarea id="designInput" class="editor design" spellcheck="false" placeholder="프론티어 모델의 DESIGN.md가 여기에 생성됩니다. 직접 수정하거나 기존 파일을 불러와도 됩니다."></textarea>
 
             <div class="editor-heading">
               <label class="field-label" for="storiesInput">Stories (JSON)</label>
-              <label class="file-button">Load .json<input id="storiesFile" type="file" accept=".json,application/json"></label>
+              <label class="file-button" role="button" tabindex="0">
+                <span class="file-button-icon" aria-hidden="true">↑</span>
+                JSON 파일 불러오기
+                <input id="storiesFile" type="file" accept=".json,application/json">
+              </label>
             </div>
             <textarea id="storiesInput" class="editor stories" spellcheck="false" placeholder='[{"id":"story-001","title":"...","prompt":"...","allowed_paths":["..."]}]'></textarea>
 
