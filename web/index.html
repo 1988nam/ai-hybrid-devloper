@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Hybrid Developer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">AH</div>
+        <div>
+          <strong>AI Hybrid Developer</strong>
+          <span>Local Coding Agent</span>
+        </div>
+      </div>
+
+      <label class="field-label" for="projectSelect">Project</label>
+      <select id="projectSelect"></select>
+
+      <nav>
+        <button class="nav-item active" data-view="run">Run</button>
+        <button class="nav-item" data-view="logs">Logs</button>
+        <button class="nav-item" data-view="diff">Diff</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="healthDot" class="health-dot"></div>
+        <span id="healthText">Checking local factory…</span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LOCAL AUTONOMOUS DEVELOPMENT</p>
+          <h1>Frontier plans. Local models build.</h1>
+        </div>
+        <div class="top-actions">
+          <button id="resumeBtn" class="button secondary">Resume</button>
+          <button id="stopBtn" class="button danger">Stop</button>
+        </div>
+      </header>
+
+      <section id="view-run" class="view active">
+        <div class="grid two-col">
+          <article class="card package-card">
+            <div class="card-heading">
+              <div>
+                <span class="kicker">NEW WORK PACKAGE</span>
+                <h2>설계서 + Story를 넘기세요</h2>
+              </div>
+            </div>
+
+            <label class="field-label" for="titleInput">Title</label>
+            <input id="titleInput" type="text" placeholder="예: Google 계정 전환 안정화">
+
+            <div class="editor-heading">
+              <label class="field-label" for="designInput">Design specification (Markdown)</label>
+              <label class="file-button">Load .md<input id="designFile" type="file" accept=".md,text/markdown,text/plain"></label>
+            </div>
+            <textarea id="designInput" class="editor design" spellcheck="false" placeholder="프론티어 모델이 작성한 DESIGN.md 내용을 붙여넣으세요."></textarea>
+
+            <div class="editor-heading">
+              <label class="field-label" for="storiesInput">Stories (JSON)</label>
+              <label class="file-button">Load .json<input id="storiesFile" type="file" accept=".json,application/json"></label>
+            </div>
+            <textarea id="storiesInput" class="editor stories" spellcheck="false" placeholder='[{"id":"story-001","title":"...","prompt":"...","allowed_paths":["..."]}]'></textarea>
+
+            <div class="package-footer">
+              <span id="storyValidation" class="hint">Story JSON을 입력하세요.</span>
+              <button id="startBtn" class="button primary">개발 시작</button>
+            </div>
+          </article>
+
+          <div class="stack">
+            <article class="card status-card">
+              <div class="card-heading status-heading">
+                <div>
+                  <span class="kicker">CURRENT RUN</span>
+                  <h2 id="runTitle">아직 실행 없음</h2>
+                </div>
+                <span id="statusBadge" class="badge neutral">NOT STARTED</span>
+              </div>
+
+              <div class="progress-row">
+                <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+                <span id="progressText">0 / 0</span>
+              </div>
+
+              <dl class="run-meta">
+                <div><dt>Branch</dt><dd id="branchValue">-</dd></div>
+                <div><dt>Current</dt><dd id="currentValue">-</dd></div>
+                <div><dt>Process</dt><dd id="processValue">-</dd></div>
+              </dl>
+            </article>
+
+            <article class="card">
+              <div class="card-heading">
+                <div>
+                  <span class="kicker">STORY QUEUE</span>
+                  <h2>Loop progress</h2>
+                </div>
+              </div>
+              <div id="storyList" class="story-list empty-state">실행이 시작되면 Story 진행 상황이 표시됩니다.</div>
+            </article>
+
+            <article class="card model-card">
+              <span class="kicker">ROLES</span>
+              <div class="model-row"><span>Developer</span><strong id="developerModel">-</strong></div>
+              <div class="model-row"><span>Reviewer</span><strong id="reviewerModel">-</strong></div>
+              <p>Aider는 내부 edit executor로만 사용됩니다. 직접 조작할 필요가 없습니다.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-logs" class="view">
+        <article class="card terminal-card">
+          <div class="card-heading">
+            <div><span class="kicker">LIVE OUTPUT</span><h2>Factory logs</h2></div>
+            <button id="refreshLogsBtn" class="button secondary small">Refresh</button>
+          </div>
+          <pre id="logOutput" class="terminal">No logs yet.</pre>
+        </article>
+      </section>
+
+      <section id="view-diff" class="view">
+        <article class="card terminal-card">
+          <div class="card-heading">
+            <div><span class="kicker">RESULT</span><h2>Integration diff</h2><p id="diffStat" class="muted"></p></div>
+            <div class="button-group">
+              <button id="openVscodeBtn" class="button secondary small">Open in VS Code</button>
+              <button id="refreshDiffBtn" class="button secondary small">Refresh</button>
+            </div>
+          </div>
+          <pre id="diffOutput" class="terminal diff">No diff yet.</pre>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
