@@ -1037,6 +1037,26 @@ class PlannerService:
         payload = parse_model_json(response)
         return validate_planner_result(payload), log
 
+    def _generate_for_provider(
+        self,
+        *,
+        provider: str,
+        repo: Path,
+        prompt: str,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> tuple[dict[str, Any], Path]:
+        if provider == "codex":
+            return self._generate_codex(
+                repo,
+                prompt,
+                model,
+                reasoning_effort,
+            )
+        if provider == "gemini":
+            return self._generate_gemini(repo, prompt)
+        raise PlannerError(f"unsupported planner provider: {provider}")
+
     def generate(
         self,
         *,
@@ -1055,23 +1075,58 @@ class PlannerService:
         before = self._git_status(repo)
         started = time.monotonic()
 
-        if provider == "codex":
-            result, log = self._generate_codex(
-                repo,
-                prompt,
-                model,
-                reasoning_effort,
+        result, log = self._generate_for_provider(
+            provider=provider,
+            repo=repo,
+            prompt=prompt,
+            model=model,
+            reasoning_effort=reasoning_effort,
+        )
+        logs = [str(log)]
+
+        locked_title = result["title"]
+        locked_design = result["design_markdown"]
+        violations = story_budget_violations(result["stories"], repo)
+        reslice_passes = 0
+
+        while violations and reslice_passes < LOCAL_STORY_MAX_RESLICE_PASSES:
+            reslice_passes += 1
+            slicer_prompt = build_story_slicer_prompt(
+                requirement,
+                project_name,
+                locked_title,
+                locked_design,
+                result["stories"],
+                violations,
             )
-        elif provider == "gemini":
-            result, log = self._generate_gemini(repo, prompt)
-        else:
-            raise PlannerError(f"unsupported planner provider: {provider}")
+            sliced, slice_log = self._generate_for_provider(
+                provider=provider,
+                repo=repo,
+                prompt=slicer_prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            )
+            logs.append(str(slice_log))
+
+            # Architecture is owned by the first planning pass. The slicer may only
+            # repartition implementation work.
+            sliced["title"] = locked_title
+            sliced["design_markdown"] = locked_design
+            result = sliced
+            violations = story_budget_violations(result["stories"], repo)
+
+        if violations:
+            raise PlannerError(
+                "Frontier planner가 local story budget을 "
+                f"{LOCAL_STORY_MAX_RESLICE_PASSES}회 재분해 후에도 만족하지 못했습니다.\n"
+                + format_story_budget_violations(violations)
+            )
 
         after = self._git_status(repo)
         if after != before:
             raise PlannerError(
                 "Frontier planner가 read-only 규칙을 어기고 repository 상태를 변경했습니다. "
-                f"변경사항은 자동 적용하지 않았습니다. 로그: {log}"
+                f"변경사항은 자동 적용하지 않았습니다. 로그: {logs[-1]}"
             )
 
         return {
@@ -1080,5 +1135,14 @@ class PlannerService:
             "model": (model or "").strip() or None,
             "reasoning_effort": (reasoning_effort or "").strip() or None,
             "elapsed_seconds": round(time.monotonic() - started, 1),
-            "log": str(log),
+            "log": logs[-1],
+            "logs": logs,
+            "story_budget": {
+                "status": "PASS",
+                "target_max_paths": LOCAL_STORY_TARGET_MAX_PATHS,
+                "hard_max_paths": LOCAL_STORY_HARD_MAX_PATHS,
+                "max_new_files": LOCAL_STORY_MAX_NEW_FILES,
+                "reslice_passes": reslice_passes,
+                "story_count": len(result["stories"]),
+            },
         }
