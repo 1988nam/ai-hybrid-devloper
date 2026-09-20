@@ -164,6 +164,18 @@
             </div>
             <textarea id="storiesInput" class="editor stories" spellcheck="false" placeholder='[{"id":"story-001","title":"...","prompt":"...","allowed_paths":["..."]}]'></textarea>
 
+            <div class="reslice-panel">
+              <div>
+                <strong>기존 MD + JSON이 이미 있나요?</strong>
+                <span>
+                  원래 Requirement가 없어도 Design을 잠그고 Story만 Local Qwen용으로 다시 쪼갤 수 있습니다.
+                </span>
+              </div>
+              <button id="reslicePackageBtn" class="button secondary" type="button">
+                Frontier로 Story 다시 쪼개기
+              </button>
+            </div>
+
             <div class="package-footer">
               <span id="storyValidation" class="hint">Story JSON을 입력하거나 Frontier Planner로 생성하세요.</span>
               <button id="startBtn" class="button primary">개발 시작</button>
