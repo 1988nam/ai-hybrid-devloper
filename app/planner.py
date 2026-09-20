@@ -269,6 +269,29 @@ Optionally:
 """
 
 
+def build_codex_exec_command(
+    executable: str,
+    schema_path: Path,
+    output_path: Path,
+    prompt: str,
+) -> list[str]:
+    """Build Codex command with global approval/sandbox flags before the exec subcommand."""
+    return [
+        executable,
+        "--sandbox",
+        "read-only",
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "--ephemeral",
+        "--output-schema",
+        str(schema_path),
+        "--output-last-message",
+        str(output_path),
+        prompt,
+    ]
+
+
 class CodexAppServer:
     """Small JSONL client used only for browser-native Codex authentication."""
 
@@ -673,20 +696,12 @@ class PlannerService:
             output_path = tmp_path / "planner-result.json"
             schema_path.write_text(json.dumps(PLANNER_SCHEMA, indent=2), encoding="utf-8")
 
-            command = [
+            command = build_codex_exec_command(
                 executable,
-                "exec",
-                "--ephemeral",
-                "--sandbox",
-                "read-only",
-                "--ask-for-approval",
-                "never",
-                "--output-schema",
-                str(schema_path),
-                "--output-last-message",
-                str(output_path),
+                schema_path,
+                output_path,
                 prompt,
-            ]
+            )
             result = _run(command, cwd=repo, timeout=1200)
             log = self._write_log("codex", result.stdout, result.stderr)
 
