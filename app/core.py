@@ -347,17 +347,56 @@ class FactoryControl:
         self._save_registry(registry)
         return job
 
+    def _archive_current_run_pointer(self, project: str) -> Path | None:
+        """Detach a previous run so an explicit Start always creates a fresh run."""
+        current_path = self.runs_dir / project / "current.json"
+        if not current_path.exists():
+            return None
+
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        archive_path = current_path.with_name(f"current.abandoned-{stamp}.json")
+        os.replace(current_path, archive_path)
+        return archive_path
+
+    def _restore_current_run_pointer(self, archive_path: Path | None, project: str) -> None:
+        if archive_path is None or not archive_path.exists():
+            return
+        current_path = self.runs_dir / project / "current.json"
+        if current_path.exists():
+            return
+        os.replace(archive_path, current_path)
+
     def start_run(
         self, project: str, *, title: str, design_md: str, stories: Any
     ) -> dict[str, Any]:
         if project not in {item["name"] for item in self.list_projects()}:
             raise ControlPlaneError(f"unknown factory project: {project}")
+
+        current = self._job_info(project)
+        if current and current.get("alive"):
+            raise ConflictError(f"{project} already has an active factory process")
+
         package = self.create_package(
             project, title=title, design_md=design_md, stories=stories
         )
+
+        # "개발 시작" means start THIS prepared package, not resume the stale
+        # current.json from an older stopped run. Keep the old pointer as an
+        # abandoned archive so no run data is deleted.
+        archived_current = self._archive_current_run_pointer(project)
         command = [self.settings.factory_command, "run", project, package["stories"]]
-        job = self._spawn(project, command, package=package["path"])
-        return {"package": package, "process": job}
+
+        try:
+            job = self._spawn(project, command, package=package["path"])
+        except Exception:
+            self._restore_current_run_pointer(archived_current, project)
+            raise
+
+        return {
+            "package": package,
+            "process": job,
+            "archived_current": str(archived_current) if archived_current else None,
+        }
 
     def resume(self, project: str) -> dict[str, Any]:
         command = [self.settings.factory_command, "resume", project]
