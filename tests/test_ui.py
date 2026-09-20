@@ -29,5 +29,14 @@ class PlannerUiTests(unittest.TestCase):
         self.assertIn("aiHybridCodexReasoningEffort", js)
 
 
+    def test_existing_package_reslice_action_is_available(self):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="reslicePackageBtn"', html)
+        self.assertIn("Frontier로 Story 다시 쪼개기", html)
+        self.assertIn("/reslice", js)
+        self.assertIn("async function reslicePackage()", js)
+
 if __name__ == "__main__":
     unittest.main()

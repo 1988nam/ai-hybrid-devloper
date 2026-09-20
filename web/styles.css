@@ -378,6 +378,28 @@ main { padding: 28px 34px 60px; min-width: 0; }
   line-height: 1;
 }
 .file-button input { display: none; }
+.reslice-panel {
+  margin-top: 16px;
+  padding: 12px 13px;
+  border: 1px solid rgba(139,124,255,.28);
+  border-radius: 11px;
+  background: rgba(139,124,255,.06);
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+.reslice-panel strong,
+.reslice-panel span { display: block; }
+.reslice-panel strong { font-size: 12px; }
+.reslice-panel span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.reslice-panel .button { flex: 0 0 auto; }
+
 .package-footer {
   display: flex;
   justify-content: space-between;
@@ -510,6 +532,8 @@ main { padding: 28px 34px 60px; min-width: 0; }
   .planner-footer,
   .provider-status-row { align-items: stretch; flex-direction: column; }
   .planner-config-row { grid-template-columns: 1fr; }
+  .reslice-panel { align-items: stretch; flex-direction: column; }
+  .reslice-panel .button { width: 100%; }
   .planner-footer .hint { max-width: none; }
   .provider-status-detail { max-width: 100%; }
 }

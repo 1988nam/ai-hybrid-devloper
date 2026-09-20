@@ -170,6 +170,7 @@ function renderPlanner(error = "") {
   const connect = $("plannerConnectBtn");
   const logout = $("plannerLogoutBtn");
   const generate = $("generatePlanBtn");
+  const reslice = $("reslicePackageBtn");
 
   if (error) {
     dot.className = "provider-status-dot error";
@@ -177,6 +178,7 @@ function renderPlanner(error = "") {
     detail.textContent = error;
     connect.disabled = false;
     generate.disabled = state.planning;
+    reslice.disabled = state.planning;
     return;
   }
 
@@ -186,6 +188,7 @@ function renderPlanner(error = "") {
     detail.textContent = "";
     connect.disabled = true;
     generate.disabled = true;
+    reslice.disabled = true;
     return;
   }
 
@@ -213,6 +216,7 @@ function renderPlanner(error = "") {
   logout.disabled = state.planning;
 
   generate.disabled = !planner.installed || !planner.connected || state.planning;
+  reslice.disabled = !planner.installed || !planner.connected || state.planning;
 }
 
 function selectPlanner(provider) {
@@ -351,8 +355,16 @@ async function generatePlan() {
     const effortLabel = result.reasoning_effort
       ? ` · ${result.reasoning_effort}`
       : "";
+    const budget = result.story_budget || {};
+    const sliceLabel = budget.reslice_passes
+      ? ` · 자동 재분해 ${budget.reslice_passes}회`
+      : "";
+    const budgetLabel = budget.status === "PASS"
+      ? ` · local-fit PASS (max ${budget.hard_max_paths || "?"} files)`
+      : "";
+
     $("plannerProgress").textContent =
-      `${planner.name} 설계 완료${modelLabel}${effortLabel} · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
+      `${planner.name} 설계 완료${modelLabel}${effortLabel} · ${result.stories?.length || 0} stories${sliceLabel}${budgetLabel} · ${result.elapsed_seconds ?? "?"}s`;
     toast("설계서와 Story가 생성되었습니다.");
   } catch (error) {
     $("plannerProgress").textContent = "Frontier planning failed. 로그/연결 상태를 확인하세요.";
@@ -360,6 +372,85 @@ async function generatePlan() {
   } finally {
     state.planning = false;
     button.textContent = "Repository 분석 + 설계 생성";
+    renderPlanner();
+  }
+}
+
+async function reslicePackage() {
+  if (!state.project) {
+    toast("Project를 먼저 선택하세요.", true);
+    return;
+  }
+
+  const design = $("designInput").value.trim();
+  if (!design) {
+    toast("기존 MD 설계서를 먼저 불러오거나 붙여넣으세요.", true);
+    $("designInput").focus();
+    return;
+  }
+
+  let stories;
+  try {
+    stories = parseStories();
+  } catch (error) {
+    toast(error.message, true);
+    $("storiesInput").focus();
+    return;
+  }
+
+  const planner = currentPlanner();
+  if (!planner?.connected) {
+    toast("선택한 Frontier Planner를 먼저 연결하세요.", true);
+    return;
+  }
+
+  state.planning = true;
+  renderPlanner();
+  const button = $("reslicePackageBtn");
+  const originalLabel = button.textContent;
+  button.textContent = "Story 재분할 중…";
+  $("plannerProgress").textContent =
+    `${planner.name}이 기존 MD를 잠그고 ${stories.length}개 Story를 Local Qwen용으로 다시 쪼개고 있습니다…`;
+
+  try {
+    const result = await api(
+      `/api/projects/${encodeURIComponent(state.project)}/reslice`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          provider: state.plannerProvider,
+          requirement: $("plannerRequirement").value.trim(),
+          title: $("titleInput").value,
+          design_md: design,
+          stories,
+          model: state.plannerProvider === "codex" ? state.plannerModel : "",
+          reasoning_effort:
+            state.plannerProvider === "codex"
+              ? state.plannerReasoningEffort
+              : "",
+        }),
+      },
+    );
+
+    $("titleInput").value = result.title || $("titleInput").value;
+    $("designInput").value = result.design_markdown || design;
+    $("storiesInput").value = JSON.stringify(result.stories || [], null, 2);
+    validateStoriesUi();
+
+    const budget = result.story_budget || {};
+    const sourceCount = budget.source_story_count ?? stories.length;
+    const finalCount = budget.story_count ?? result.stories?.length ?? 0;
+    const passes = budget.reslice_passes ?? 0;
+    $("plannerProgress").textContent =
+      `${planner.name} 재분할 완료 · ${sourceCount} → ${finalCount} stories · ${passes} pass · local-fit ${budget.status || "?"}`;
+    toast("기존 MD를 유지한 채 Story를 다시 쪼갰습니다.");
+  } catch (error) {
+    $("plannerProgress").textContent =
+      "기존 Work Package 재분할 실패. Story budget 또는 provider 로그를 확인하세요.";
+    toast(error.message, true);
+  } finally {
+    state.planning = false;
+    button.textContent = originalLabel;
     renderPlanner();
   }
 }
@@ -583,6 +674,7 @@ function bind() {
   $("plannerConnectBtn").addEventListener("click", connectPlanner);
   $("plannerLogoutBtn").addEventListener("click", logoutCodex);
   $("generatePlanBtn").addEventListener("click", generatePlan);
+  $("reslicePackageBtn").addEventListener("click", reslicePackage);
 
   document.querySelectorAll(".file-button").forEach((label) => {
     label.addEventListener("keydown", (event) => {

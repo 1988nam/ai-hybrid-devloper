@@ -36,6 +36,12 @@ CODEX_REASONING_EFFORT_OPTIONS = [
 ]
 
 
+LOCAL_STORY_TARGET_MAX_PATHS = 4
+LOCAL_STORY_HARD_MAX_PATHS = 5
+LOCAL_STORY_MAX_NEW_FILES = 2
+LOCAL_STORY_MAX_RESLICE_PASSES = 2
+
+
 PLANNER_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -258,6 +264,143 @@ def validate_planner_result(value: Any) -> dict[str, Any]:
     }
 
 
+def story_budget_violations(
+    stories: list[dict[str, Any]],
+    repo: Path | None = None,
+) -> list[str]:
+    """Return local-execution budget violations for a frontier-generated story queue."""
+    violations: list[str] = []
+
+    for story in stories:
+        story_id = str(story.get("id") or "?")
+        paths = story.get("allowed_paths") or []
+        unique_paths = list(dict.fromkeys(paths))
+
+        if len(paths) != len(unique_paths):
+            violations.append(
+                f"{story_id}: allowed_paths contains duplicate paths"
+            )
+
+        if len(unique_paths) > LOCAL_STORY_HARD_MAX_PATHS:
+            violations.append(
+                f"{story_id}: {len(unique_paths)} editable paths exceeds hard max "
+                f"{LOCAL_STORY_HARD_MAX_PATHS}"
+            )
+
+        invalid_paths = [
+            path
+            for path in unique_paths
+            if "\\" in path or path.startswith("/") or path.startswith("./")
+        ]
+        if invalid_paths:
+            violations.append(
+                f"{story_id}: allowed_paths must be literal repo-relative paths "
+                f"without regex/shell escaping: {', '.join(invalid_paths)}"
+            )
+
+        if repo is not None:
+            new_paths = [
+                path
+                for path in unique_paths
+                if "\\" not in path and not (repo / path).exists()
+            ]
+            if len(new_paths) > LOCAL_STORY_MAX_NEW_FILES:
+                violations.append(
+                    f"{story_id}: {len(new_paths)} new files exceeds hard max "
+                    f"{LOCAL_STORY_MAX_NEW_FILES}: {', '.join(new_paths)}"
+                )
+
+    return violations
+
+
+def format_story_budget_violations(violations: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in violations)
+
+
+def build_story_slicer_prompt(
+    requirement: str,
+    project_name: str,
+    title: str,
+    design_markdown: str,
+    stories: list[dict[str, Any]],
+    violations: list[str],
+) -> str:
+    """Build a second-pass prompt that preserves architecture and only re-slices stories."""
+    source_json = json.dumps(stories, ensure_ascii=False, indent=2)
+    violation_text = format_story_budget_violations(violations)
+
+    return f"""You are the LOCAL-EXECUTION STORY SLICER for a hybrid coding system.
+
+PROJECT
+=======
+{project_name}
+
+ORIGINAL USER REQUIREMENT
+=========================
+{requirement.strip()}
+
+LOCKED ARCHITECTURE TITLE
+=========================
+{title}
+
+LOCKED DESIGN
+=============
+{design_markdown}
+
+CURRENT STORY QUEUE
+===================
+{source_json}
+
+DETERMINISTIC BUDGET FAILURES
+=============================
+{violation_text}
+
+YOUR ONLY JOB
+=============
+Repartition the CURRENT STORY QUEUE into smaller executable stories for a local
+Qwen coding worker using Aider. Preserve the locked architecture and acceptance
+criteria. Do not redesign the product.
+
+LOCAL EXECUTION BUDGET
+======================
+- Target 2-4 editable files per story.
+- Hard maximum: {LOCAL_STORY_HARD_MAX_PATHS} allowed_paths entries per story,
+  INCLUDING test files.
+- Maximum {LOCAL_STORY_MAX_NEW_FILES} new files in one story.
+- allowed_paths means files expected to be EDITED, not files merely read for
+  context. The coding worker has a repo map for read-only context.
+- One primary subsystem or migration concern per story.
+- Never introduce a new abstraction/helper and migrate every consumer in the
+  same story. First establish the contract + focused tests, then migrate small
+  consumer groups in later stories.
+- If a new dependency changes how existing VM/test harnesses load files, make
+  compatibility/harness work an explicit early story before mass migration.
+- Keep storage/config, auth/session, build/deploy, worker/API, portal/navigation,
+  browser regression, and documentation in separate stories unless a tiny
+  atomic change genuinely requires two of them.
+- Every story must leave npm test and npm run build capable of passing once the
+  story is complete.
+- verify_commands are ONLY extra targeted checks. Do not repeat npm test or
+  npm run build there; the factory runs the base gates separately.
+- Use exact repo-relative paths such as apps/dachangi/sw.js. Never write
+  regex-style escapes such as sw\\.js, test\\.mjs, A\\:H, or shell globs.
+- Use sequential IDs S1, S2, S3... in execution order.
+- Do not create a final mega-story that is allowed to touch any file needed to
+  'fix remaining issues'. Split browser regression, bug fixes, and docs/final
+  verification into bounded stories.
+
+OUTPUT
+======
+Return the same structured contract:
+- title
+- design_markdown
+- stories[]
+
+The returned title and design_markdown must be the LOCKED title/design above.
+Only the story partitioning may change.
+"""
+
+
 def build_planner_prompt(requirement: str, project_name: str) -> str:
     request = requirement.strip()
     if not request:
@@ -297,17 +440,43 @@ The design_markdown must include:
 
 STORY RULES
 ===========
+These stories will be executed by a smaller local Qwen model through Aider.
+Optimize for reliable autonomous execution, not for the fewest number of stories.
+
 - Stories must be ordered so each story starts from the previous story's integrated result.
-- Keep each story coherent enough for one autonomous coding loop. Split unrelated concerns.
+- Target 2-4 editable files per story.
+- HARD MAXIMUM: {LOCAL_STORY_HARD_MAX_PATHS} allowed_paths entries per story,
+  INCLUDING tests. If more files are needed, split the story.
+- Maximum {LOCAL_STORY_MAX_NEW_FILES} new files in one story.
+- One primary subsystem or migration concern per story.
+- Do not combine a new abstraction/helper with migration of every consumer.
+  First establish the helper/contract + focused tests, then migrate small groups
+  of consumers in later stories.
+- If a new dependency changes VM/test harness setup, create an early compatibility
+  story that updates the harness before migrating more production files.
+- Keep these concerns separate unless the change is genuinely tiny and atomic:
+  storage/config, diary generation, photo/Drive, auth/session, build/deploy,
+  worker/API, portal/navigation, service worker, browser regression, documentation.
 - Each story prompt must be self-contained and implementation-oriented.
 - Use real repository paths. Never invent an existing path you did not verify.
-- A new file path is allowed only when its parent/location is justified by repository structure.
-- allowed_paths must be the smallest practical edit scope for that story.
-- Include relevant test files in allowed_paths when tests should change.
-- Explicitly protect existing behavior and prohibit deleting, skipping, weakening, or bypassing tests.
-- Prefer existing repository test/build commands. Add verify_commands only when a story needs an additional targeted command already supported by the repository.
+- allowed_paths is an EDIT PERMISSION LIST, not a list of every related file.
+  Do not include read-only/reference files merely because the model may inspect them.
+- Include a test file only when that story is expected to edit that test file.
+- Use literal repo-relative paths. Never use regex/shell escaping in paths:
+  write apps/dachangi/sw.js, not apps/dachangi/sw\\.js.
+- Do not escape normal punctuation inside prompt text (for example write A:H,
+  not A\\:H).
+- Explicitly protect existing behavior and prohibit deleting, skipping, weakening,
+  or bypassing tests.
+- The factory already runs npm test and npm run build after every story.
+  verify_commands must contain only ADDITIONAL targeted checks; do not repeat the
+  base gates there.
+- Every story must leave the repository in a state where the base gates can pass.
+  Never create a knowingly broken intermediate migration.
 - Do not ask the local model to make architectural choices already resolved in the design.
 - Do not include planning-only stories. Every story must produce an implementation increment.
+- Do not create a broad final "fix anything remaining" story. Browser regression,
+  fixes discovered by it, docs, and final verification must stay bounded.
 
 OUTPUT
 ======
@@ -868,6 +1037,147 @@ class PlannerService:
         payload = parse_model_json(response)
         return validate_planner_result(payload), log
 
+    def _generate_for_provider(
+        self,
+        *,
+        provider: str,
+        repo: Path,
+        prompt: str,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> tuple[dict[str, Any], Path]:
+        if provider == "codex":
+            return self._generate_codex(
+                repo,
+                prompt,
+                model,
+                reasoning_effort,
+            )
+        if provider == "gemini":
+            return self._generate_gemini(repo, prompt)
+        raise PlannerError(f"unsupported planner provider: {provider}")
+
+    def reslice_existing(
+        self,
+        *,
+        provider: str,
+        project_name: str,
+        source_repo: str,
+        title: str,
+        design_markdown: str,
+        stories: Any,
+        requirement: str = "",
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> dict[str, Any]:
+        """Re-slice an imported MD + JSON package without needing the original request."""
+        repo = Path(source_repo).expanduser().resolve()
+        if not repo.exists():
+            raise PlannerError(f"project repository not found: {repo}")
+
+        design = design_markdown.strip()
+        if not design:
+            raise PlannerError("기존 Design Markdown을 먼저 불러오세요.")
+
+        resolved_title = title.strip()
+        if not resolved_title:
+            for line in design.splitlines():
+                line = line.strip()
+                if line.startswith("# "):
+                    resolved_title = line[2:].strip()
+                    break
+        if not resolved_title:
+            resolved_title = "Imported work package"
+
+        package = validate_planner_result(
+            {
+                "title": resolved_title,
+                "design_markdown": design,
+                "stories": stories,
+            }
+        )
+
+        locked_title = package["title"]
+        locked_design = package["design_markdown"]
+        current_stories = package["stories"]
+        source_story_count = len(current_stories)
+
+        before = self._git_status(repo)
+        started = time.monotonic()
+        logs: list[str] = []
+
+        violations = story_budget_violations(current_stories, repo)
+        reasons = violations or [
+            "Manual MD+JSON re-slice requested: optimize this already-valid queue "
+            "for smaller local Qwen/Aider execution units."
+        ]
+
+        reslice_passes = 0
+        while reasons and reslice_passes < LOCAL_STORY_MAX_RESLICE_PASSES:
+            reslice_passes += 1
+            slicer_prompt = build_story_slicer_prompt(
+                requirement.strip()
+                or (
+                    "No separate original requirement text is available. "
+                    "Treat the locked Design Markdown as the authoritative product "
+                    "requirement and preserve it exactly."
+                ),
+                project_name,
+                locked_title,
+                locked_design,
+                current_stories,
+                reasons,
+            )
+
+            sliced, slice_log = self._generate_for_provider(
+                provider=provider,
+                repo=repo,
+                prompt=slicer_prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            )
+            logs.append(str(slice_log))
+
+            current_stories = sliced["stories"]
+            violations = story_budget_violations(current_stories, repo)
+            reasons = violations
+
+        if violations:
+            raise PlannerError(
+                "기존 MD+JSON을 Frontier가 재분해했지만 local story budget을 "
+                f"{LOCAL_STORY_MAX_RESLICE_PASSES}회 안에 만족하지 못했습니다.\n"
+                + format_story_budget_violations(violations)
+            )
+
+        after = self._git_status(repo)
+        if after != before:
+            raise PlannerError(
+                "Frontier Story Slicer가 read-only 규칙을 어기고 repository 상태를 "
+                f"변경했습니다. 변경사항은 자동 적용하지 않았습니다. 로그: {logs[-1]}"
+            )
+
+        return {
+            "title": locked_title,
+            "design_markdown": locked_design,
+            "stories": current_stories,
+            "provider": provider,
+            "model": (model or "").strip() or None,
+            "reasoning_effort": (reasoning_effort or "").strip() or None,
+            "elapsed_seconds": round(time.monotonic() - started, 1),
+            "log": logs[-1] if logs else None,
+            "logs": logs,
+            "story_budget": {
+                "status": "PASS",
+                "target_max_paths": LOCAL_STORY_TARGET_MAX_PATHS,
+                "hard_max_paths": LOCAL_STORY_HARD_MAX_PATHS,
+                "max_new_files": LOCAL_STORY_MAX_NEW_FILES,
+                "reslice_passes": reslice_passes,
+                "source_story_count": source_story_count,
+                "story_count": len(current_stories),
+                "mode": "imported-package-reslice",
+            },
+        }
+
     def generate(
         self,
         *,
@@ -886,23 +1196,58 @@ class PlannerService:
         before = self._git_status(repo)
         started = time.monotonic()
 
-        if provider == "codex":
-            result, log = self._generate_codex(
-                repo,
-                prompt,
-                model,
-                reasoning_effort,
+        result, log = self._generate_for_provider(
+            provider=provider,
+            repo=repo,
+            prompt=prompt,
+            model=model,
+            reasoning_effort=reasoning_effort,
+        )
+        logs = [str(log)]
+
+        locked_title = result["title"]
+        locked_design = result["design_markdown"]
+        violations = story_budget_violations(result["stories"], repo)
+        reslice_passes = 0
+
+        while violations and reslice_passes < LOCAL_STORY_MAX_RESLICE_PASSES:
+            reslice_passes += 1
+            slicer_prompt = build_story_slicer_prompt(
+                requirement,
+                project_name,
+                locked_title,
+                locked_design,
+                result["stories"],
+                violations,
             )
-        elif provider == "gemini":
-            result, log = self._generate_gemini(repo, prompt)
-        else:
-            raise PlannerError(f"unsupported planner provider: {provider}")
+            sliced, slice_log = self._generate_for_provider(
+                provider=provider,
+                repo=repo,
+                prompt=slicer_prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            )
+            logs.append(str(slice_log))
+
+            # Architecture is owned by the first planning pass. The slicer may only
+            # repartition implementation work.
+            sliced["title"] = locked_title
+            sliced["design_markdown"] = locked_design
+            result = sliced
+            violations = story_budget_violations(result["stories"], repo)
+
+        if violations:
+            raise PlannerError(
+                "Frontier planner가 local story budget을 "
+                f"{LOCAL_STORY_MAX_RESLICE_PASSES}회 재분해 후에도 만족하지 못했습니다.\n"
+                + format_story_budget_violations(violations)
+            )
 
         after = self._git_status(repo)
         if after != before:
             raise PlannerError(
                 "Frontier planner가 read-only 규칙을 어기고 repository 상태를 변경했습니다. "
-                f"변경사항은 자동 적용하지 않았습니다. 로그: {log}"
+                f"변경사항은 자동 적용하지 않았습니다. 로그: {logs[-1]}"
             )
 
         return {
@@ -911,5 +1256,14 @@ class PlannerService:
             "model": (model or "").strip() or None,
             "reasoning_effort": (reasoning_effort or "").strip() or None,
             "elapsed_seconds": round(time.monotonic() - started, 1),
-            "log": str(log),
+            "log": logs[-1],
+            "logs": logs,
+            "story_budget": {
+                "status": "PASS",
+                "target_max_paths": LOCAL_STORY_TARGET_MAX_PATHS,
+                "hard_max_paths": LOCAL_STORY_HARD_MAX_PATHS,
+                "max_new_files": LOCAL_STORY_MAX_NEW_FILES,
+                "reslice_passes": reslice_passes,
+                "story_count": len(result["stories"]),
+            },
         }

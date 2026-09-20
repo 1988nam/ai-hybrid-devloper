@@ -56,6 +56,32 @@ class PlannerApi:
         if (
             len(parts) == 4
             and parts[:2] == ["api", "projects"]
+            and parts[3] == "reslice"
+        ):
+            project = parts[2]
+            info = self._project_info(project)
+            source_repo = info.get("source_repo")
+            if not source_repo:
+                raise PlannerError(f"{project}: source_repo is not configured")
+
+            result = self.planner.reslice_existing(
+                provider=str(body.get("provider", "")),
+                project_name=project,
+                source_repo=str(source_repo),
+                title=str(body.get("title", "")),
+                design_markdown=str(body.get("design_md", "")),
+                stories=body.get("stories"),
+                requirement=str(body.get("requirement", "")),
+                model=str(body.get("model", "")).strip() or None,
+                reasoning_effort=(
+                    str(body.get("reasoning_effort", "")).strip() or None
+                ),
+            )
+            return HTTPStatus.OK, result
+
+        if (
+            len(parts) == 4
+            and parts[:2] == ["api", "projects"]
             and parts[3] == "plan"
         ):
             project = parts[2]

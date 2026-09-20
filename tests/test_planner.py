@@ -1,12 +1,18 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from app.planner import (
+    LOCAL_STORY_HARD_MAX_PATHS,
     PlannerError,
+    PlannerService,
     build_codex_exec_command,
     build_gemini_login_script,
     build_planner_prompt,
+    build_story_slicer_prompt,
     parse_model_json,
+    story_budget_violations,
     validate_planner_result,
 )
 
@@ -118,6 +124,230 @@ class PlannerValidationTests(unittest.TestCase):
             )
 
 
+
+
+class StoryBudgetTests(unittest.TestCase):
+    def test_oversized_story_and_escaped_paths_are_rejected_by_budget(self):
+        stories = [
+            {
+                "id": "S1",
+                "title": "Too broad",
+                "prompt": "Do too many things.",
+                "allowed_paths": [
+                    "a.js",
+                    "b.js",
+                    "c.js",
+                    "d.js",
+                    "e.js",
+                    "f.js",
+                    "apps/dachangi/sw\\.js",
+                ],
+            }
+        ]
+
+        violations = story_budget_violations(stories)
+
+        self.assertTrue(
+            any("exceeds hard max" in item for item in violations),
+            violations,
+        )
+        self.assertTrue(
+            any("without regex/shell escaping" in item for item in violations),
+            violations,
+        )
+
+    def test_planner_prompt_explains_local_story_budget(self):
+        prompt = build_planner_prompt("Implement a feature.", "olchangi")
+
+        self.assertIn("Target 2-4 editable files per story", prompt)
+        self.assertIn(
+            f"HARD MAXIMUM: {LOCAL_STORY_HARD_MAX_PATHS} allowed_paths",
+            prompt,
+        )
+        self.assertIn("EDIT PERMISSION LIST", prompt)
+        self.assertIn("Never create a knowingly broken intermediate migration", prompt)
+        self.assertIn("not apps/dachangi/sw\\.js", prompt)
+
+    def test_slicer_prompt_preserves_architecture_and_explains_failure(self):
+        prompt = build_story_slicer_prompt(
+            "Implement a feature.",
+            "olchangi",
+            "Locked title",
+            "# Locked design",
+            [
+                {
+                    "id": "S1",
+                    "title": "Large story",
+                    "prompt": "Do everything",
+                    "allowed_paths": ["a", "b", "c", "d", "e", "f"],
+                }
+            ],
+            ["S1: 6 editable paths exceeds hard max 5"],
+        )
+
+        self.assertIn("LOCAL-EXECUTION STORY SLICER", prompt)
+        self.assertIn("Locked title", prompt)
+        self.assertIn("# Locked design", prompt)
+        self.assertIn("S1: 6 editable paths exceeds hard max 5", prompt)
+        self.assertIn("Only the story partitioning may change", prompt)
+
+
+class AutoResliceTests(unittest.TestCase):
+    def test_generate_automatically_reslices_oversized_queue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            state_home = Path(tmp) / "state"
+            repo.mkdir()
+
+            for name in ["a.js", "b.js", "c.js", "d.js", "e.js", "f.js"]:
+                (repo / name).write_text("// fixture\n", encoding="utf-8")
+
+            initial = {
+                "title": "Feature",
+                "design_markdown": "# Architecture",
+                "stories": [
+                    {
+                        "id": "S1",
+                        "title": "Too large",
+                        "prompt": "Implement everything.",
+                        "allowed_paths": [
+                            "a.js",
+                            "b.js",
+                            "c.js",
+                            "d.js",
+                            "e.js",
+                            "f.js",
+                        ],
+                    }
+                ],
+            }
+            sliced = {
+                "title": "Model tried to rename this",
+                "design_markdown": "# Model tried to redesign this",
+                "stories": [
+                    {
+                        "id": "S1",
+                        "title": "Part one",
+                        "prompt": "Implement first part.",
+                        "allowed_paths": ["a.js", "b.js", "c.js"],
+                    },
+                    {
+                        "id": "S2",
+                        "title": "Part two",
+                        "prompt": "Implement second part.",
+                        "allowed_paths": ["d.js", "e.js", "f.js"],
+                    },
+                ],
+            }
+
+            class FakePlanner(PlannerService):
+                def __init__(self):
+                    super().__init__(state_home)
+                    self.results = [initial, sliced]
+
+                def _git_status(self, _repo):
+                    return ""
+
+                def _generate_for_provider(self, **_kwargs):
+                    result = self.results.pop(0)
+                    return result, state_home / "fake.log"
+
+            planner = FakePlanner()
+            result = planner.generate(
+                provider="codex",
+                project_name="olchangi",
+                source_repo=str(repo),
+                requirement="Implement the feature.",
+            )
+
+            self.assertEqual(result["title"], "Feature")
+            self.assertEqual(result["design_markdown"], "# Architecture")
+            self.assertEqual(result["story_budget"]["status"], "PASS")
+            self.assertEqual(result["story_budget"]["reslice_passes"], 1)
+            self.assertEqual(len(result["stories"]), 2)
+            self.assertTrue(
+                all(
+                    len(story["allowed_paths"]) <= LOCAL_STORY_HARD_MAX_PATHS
+                    for story in result["stories"]
+                )
+            )
+
+
+class ImportedPackageResliceTests(unittest.TestCase):
+    def test_existing_md_json_can_be_resliced_without_original_requirement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            state_home = Path(tmp) / "state"
+            repo.mkdir()
+
+            for name in ["a.js", "b.js", "c.js", "d.js", "e.js", "f.js"]:
+                (repo / name).write_text("// fixture\n", encoding="utf-8")
+
+            sliced = {
+                "title": "Ignored slicer title",
+                "design_markdown": "# Ignored slicer design",
+                "stories": [
+                    {
+                        "id": "S1",
+                        "title": "Part one",
+                        "prompt": "Implement first part.",
+                        "allowed_paths": ["a.js", "b.js", "c.js"],
+                    },
+                    {
+                        "id": "S2",
+                        "title": "Part two",
+                        "prompt": "Implement second part.",
+                        "allowed_paths": ["d.js", "e.js", "f.js"],
+                    },
+                ],
+            }
+
+            class FakePlanner(PlannerService):
+                def __init__(self):
+                    super().__init__(state_home)
+                    self.prompt = None
+
+                def _git_status(self, _repo):
+                    return ""
+
+                def _generate_for_provider(self, **kwargs):
+                    self.prompt = kwargs["prompt"]
+                    return sliced, state_home / "fake.log"
+
+            planner = FakePlanner()
+            result = planner.reslice_existing(
+                provider="codex",
+                project_name="olchangi",
+                source_repo=str(repo),
+                title="",
+                design_markdown="# Siuchangi Design\nLocked architecture.",
+                stories=[
+                    {
+                        "id": "S1",
+                        "title": "Old mega story",
+                        "prompt": "Change everything.",
+                        "allowed_paths": [
+                            "a.js",
+                            "b.js",
+                            "c.js",
+                            "d.js",
+                            "e.js",
+                            "f.js",
+                        ],
+                    }
+                ],
+            )
+
+            self.assertEqual(result["title"], "Siuchangi Design")
+            self.assertEqual(
+                result["design_markdown"],
+                "# Siuchangi Design\nLocked architecture.",
+            )
+            self.assertEqual(result["story_budget"]["mode"], "imported-package-reslice")
+            self.assertEqual(result["story_budget"]["source_story_count"], 1)
+            self.assertEqual(result["story_budget"]["story_count"], 2)
+            self.assertIn("No separate original requirement text is available", planner.prompt)
+            self.assertIn("Only the story partitioning may change", planner.prompt)
 
 
 class GeminiLoginScriptTests(unittest.TestCase):
