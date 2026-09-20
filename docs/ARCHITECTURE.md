@@ -109,7 +109,15 @@ that still violates the hard budget is rejected before Local Factory starts.
 
 ## Local loop plane
 
-The existing coding factory remains authoritative for:
+The repository is now authoritative for the Local Coding Factory implementation under `factory/`:
+
+- `factory/factory.py`
+- `factory/runner.py`
+- `factory/guard_tests.py`
+
+`scripts/install.sh` synchronizes those tracked files into the machine-local runtime directory, by default `~/local-coding-factory/`. Runtime state, logs, worktrees, inbox packages, and machine-specific project TOMLs remain outside Git.
+
+The Factory remains authoritative for:
 
 - per-Story worktrees
 - Aider execution
@@ -119,6 +127,8 @@ The existing coding factory remains authoritative for:
 - bounded fresh-process retry
 - commit and ff-only integration
 - checkpoint and crash resume
+
+Story branches include the integration-run namespace (for example `local-agent/factory-olchangi-20260920-224206/S1`) so abandoned runs cannot block a later run with the same Story ID.
 
 The dashboard never calls Aider directly.
 
@@ -150,11 +160,14 @@ Planner endpoints:
 
 The dashboard owns control-plane state such as provider execution logs and the background factory process PID.
 
-The coding factory remains the source of truth for implementation state:
+Git-tracked Factory source lives under `factory/`.
+
+The installed coding-factory runtime remains the source of truth only for machine/runtime state:
 
 - `~/local-coding-factory/projects/*.toml`
 - `~/local-coding-factory/runs/<project>/current.json`
 - each run's `runtime/state.json`
+- local inbox packages and execution logs
 
 Planner logs live below the dashboard state directory, not inside the target project repository.
 
