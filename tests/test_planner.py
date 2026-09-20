@@ -3,6 +3,7 @@ import unittest
 
 from app.planner import (
     PlannerError,
+    build_gemini_login_script,
     build_planner_prompt,
     parse_model_json,
     validate_planner_result,
@@ -94,6 +95,20 @@ class PlannerValidationTests(unittest.TestCase):
                 }
             )
 
+
+
+
+class GeminiLoginScriptTests(unittest.TestCase):
+    def test_login_script_keeps_terminal_open_after_failure(self):
+        script = build_gemini_login_script(
+            "/home/user/.nvm/versions/node/v24/bin/gemini"
+        )
+
+        self.assertIn("/home/user/.nvm/versions/node/v24/bin", script)
+        self.assertIn("command -v node", script)
+        self.assertIn("Gemini CLI exited with code $status", script)
+        self.assertIn("Press Enter to close this window", script)
+        self.assertIn('exit "$status"', script)
 
 class PlannerPromptTests(unittest.TestCase):
     def test_prompt_requires_repo_grounding_and_read_only_planning(self):
