@@ -26,6 +26,15 @@ CODEX_MODEL_OPTIONS = [
     {"id": "gpt-5.3-codex-spark", "label": "GPT-5.3 Codex Spark"},
 ]
 
+CODEX_REASONING_EFFORT_OPTIONS = [
+    {"id": "", "label": "Codex default"},
+    {"id": "minimal", "label": "Minimal"},
+    {"id": "low", "label": "Low"},
+    {"id": "medium", "label": "Medium"},
+    {"id": "high", "label": "High"},
+    {"id": "xhigh", "label": "Extra High"},
+]
+
 
 PLANNER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -323,16 +332,27 @@ def build_codex_exec_command(
     output_path: Path,
     prompt: str,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> list[str]:
-    """Build a read-only Codex exec command with an optional explicit model."""
+    """Build a read-only Codex exec command with optional model/effort overrides."""
     command = [
         executable,
         "--sandbox",
         "read-only",
         "--ask-for-approval",
         "never",
-        "exec",
     ]
+
+    selected_effort = (reasoning_effort or "").strip()
+    if selected_effort:
+        command.extend(
+            [
+                "--config",
+                f'model_reasoning_effort="{selected_effort}"',
+            ]
+        )
+
+    command.append("exec")
 
     selected_model = (model or "").strip()
     if selected_model:
@@ -480,6 +500,7 @@ class PlannerService:
                 "auth_mode": None,
                 "plan": None,
                 "models": CODEX_MODEL_OPTIONS,
+                "reasoning_efforts": CODEX_REASONING_EFFORT_OPTIONS,
                 "detail": "Codex CLI is not installed",
             }
 
@@ -522,6 +543,7 @@ class PlannerService:
             "plan": plan,
             "email": email,
             "models": CODEX_MODEL_OPTIONS,
+            "reasoning_efforts": CODEX_REASONING_EFFORT_OPTIONS,
             "detail": text or ("Connected" if connected else "Not logged in"),
         }
 
@@ -760,6 +782,7 @@ class PlannerService:
         repo: Path,
         prompt: str,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> tuple[dict[str, Any], Path]:
         executable = shutil.which("codex")
         if not executable:
@@ -777,6 +800,7 @@ class PlannerService:
                 output_path,
                 prompt,
                 model,
+                reasoning_effort,
             )
             result = _run(command, cwd=repo, timeout=1200)
             log = self._write_log("codex", result.stdout, result.stderr)
@@ -852,6 +876,7 @@ class PlannerService:
         source_repo: str,
         requirement: str,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         repo = Path(source_repo).expanduser().resolve()
         if not repo.exists():
@@ -862,7 +887,12 @@ class PlannerService:
         started = time.monotonic()
 
         if provider == "codex":
-            result, log = self._generate_codex(repo, prompt, model)
+            result, log = self._generate_codex(
+                repo,
+                prompt,
+                model,
+                reasoning_effort,
+            )
         elif provider == "gemini":
             result, log = self._generate_gemini(repo, prompt)
         else:
@@ -879,6 +909,7 @@ class PlannerService:
             **result,
             "provider": provider,
             "model": (model or "").strip() or None,
+            "reasoning_effort": (reasoning_effort or "").strip() or None,
             "elapsed_seconds": round(time.monotonic() - started, 1),
             "log": str(log),
         }
