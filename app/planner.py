@@ -598,7 +598,7 @@ class PlannerService:
         wt = shutil.which("wt.exe")
         bin_dir = str(Path(executable).parent)
         login_command = (
-            f"export PATH={shlex.quote(bin_dir)}:\\"$PATH\\"; "
+            f'export PATH={shlex.quote(bin_dir)}:"$PATH"; '
             f"exec {shlex.quote(executable)}"
         )
 
