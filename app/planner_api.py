@@ -69,6 +69,7 @@ class PlannerApi:
                 project_name=project,
                 source_repo=str(source_repo),
                 requirement=str(body.get("requirement", "")),
+                model=str(body.get("model", "")).strip() or None,
             )
             return HTTPStatus.OK, result
 
