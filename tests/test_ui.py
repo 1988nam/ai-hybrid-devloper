@@ -22,8 +22,11 @@ class PlannerUiTests(unittest.TestCase):
 
         self.assertIn('id="plannerModelSelect"', html)
         self.assertIn('id="plannerCustomModel"', html)
+        self.assertIn('id="plannerEffortSelect"', html)
         self.assertIn('model: state.plannerProvider === "codex"', js)
+        self.assertIn("reasoning_effort:", js)
         self.assertIn("aiHybridCodexModel", js)
+        self.assertIn("aiHybridCodexReasoningEffort", js)
 
 
 if __name__ == "__main__":
