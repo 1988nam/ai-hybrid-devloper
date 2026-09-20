@@ -156,7 +156,7 @@ class CodexCommandTests(unittest.TestCase):
 
 
 class CodexModelTests(unittest.TestCase):
-    def test_selected_model_is_passed_before_exec(self):
+    def test_selected_model_is_passed_to_exec(self):
         from pathlib import Path
 
         command = build_codex_exec_command(
@@ -184,6 +184,42 @@ class CodexModelTests(unittest.TestCase):
         )
 
         self.assertNotIn("--model", command)
+
+
+class CodexReasoningEffortTests(unittest.TestCase):
+    def test_selected_reasoning_effort_is_passed_as_global_config(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+            "high",
+        )
+
+        config_index = command.index("--config")
+        exec_index = command.index("exec")
+
+        self.assertLess(config_index, exec_index)
+        self.assertEqual(
+            command[config_index + 1],
+            'model_reasoning_effort="high"',
+        )
+
+    def test_default_reasoning_effort_omits_config_override(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+        )
+
+        self.assertNotIn("--config", command)
 
 
 class PlannerPromptTests(unittest.TestCase):
