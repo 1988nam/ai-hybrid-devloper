@@ -8,6 +8,7 @@ const state = {
   planners: [],
   plannerProvider: "codex",
   plannerLoginPoller: null,
+  plannerModel: localStorage.getItem("aiHybridCodexModel") || "",
   planning: false,
 };
 
@@ -82,12 +83,51 @@ function plannerConnectionLabel(planner) {
   return parts.length ? parts.join(" · ") : (planner.detail || "Connected");
 }
 
+function persistPlannerModel(value) {
+  state.plannerModel = value || "";
+  localStorage.setItem("aiHybridCodexModel", state.plannerModel);
+}
+
+function renderPlannerModel(planner) {
+  const row = $("codexModelRow");
+  const select = $("plannerModelSelect");
+  const custom = $("plannerCustomModel");
+  const hint = $("plannerModelHint");
+
+  const isCodex = state.plannerProvider === "codex";
+  row.classList.toggle("hidden", !isCodex);
+  if (!isCodex) return;
+
+  const models = Array.isArray(planner?.models) ? planner.models : [];
+  const selected = state.plannerModel || "";
+  const knownIds = new Set(models.map((item) => item.id));
+  const customSelected = Boolean(selected) && !knownIds.has(selected);
+
+  select.innerHTML = [
+    '<option value="">Codex default</option>',
+    ...models.map(
+      (item) =>
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.id)}</option>`,
+    ),
+    '<option value="__custom__">Custom model ID…</option>',
+  ].join("");
+
+  select.value = customSelected ? "__custom__" : selected;
+  custom.classList.toggle("hidden", !customSelected);
+  custom.value = customSelected ? selected : "";
+
+  hint.textContent = selected
+    ? `설계 생성에 ${selected} 모델을 사용합니다.`
+    : "Codex CLI의 기본 모델을 사용합니다.";
+}
+
 function renderPlanner(error = "") {
   document.querySelectorAll(".provider-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.provider === state.plannerProvider);
   });
 
   const planner = currentPlanner();
+  renderPlannerModel(planner);
   const dot = $("plannerStatusDot");
   const title = $("plannerStatusTitle");
   const detail = $("plannerStatusDetail");
@@ -257,6 +297,7 @@ async function generatePlan() {
         body: JSON.stringify({
           provider: state.plannerProvider,
           requirement,
+          model: state.plannerProvider === "codex" ? state.plannerModel : "",
         }),
       },
     );
@@ -266,8 +307,9 @@ async function generatePlan() {
     $("storiesInput").value = JSON.stringify(result.stories || [], null, 2);
     validateStoriesUi();
 
+    const modelLabel = result.model ? ` · ${result.model}` : "";
     $("plannerProgress").textContent =
-      `${planner.name} 설계 완료 · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
+      `${planner.name} 설계 완료${modelLabel} · ${result.stories?.length || 0} stories · ${result.elapsed_seconds ?? "?"}s`;
     toast("설계서와 Story가 생성되었습니다.");
   } catch (error) {
     $("plannerProgress").textContent = "Frontier planning failed. 로그/연결 상태를 확인하세요.";
@@ -460,10 +502,43 @@ function bind() {
     button.addEventListener("click", () => selectPlanner(button.dataset.provider));
   });
 
+  $("plannerModelSelect").addEventListener("change", (event) => {
+    const value = event.target.value;
+    const custom = $("plannerCustomModel");
+
+    if (value === "__custom__") {
+      custom.classList.remove("hidden");
+      custom.focus();
+      persistPlannerModel(custom.value.trim());
+    } else {
+      custom.classList.add("hidden");
+      custom.value = "";
+      persistPlannerModel(value);
+    }
+
+    renderPlannerModel(currentPlanner());
+  });
+
+  $("plannerCustomModel").addEventListener("input", (event) => {
+    persistPlannerModel(event.target.value.trim());
+    $("plannerModelHint").textContent = state.plannerModel
+      ? `설계 생성에 ${state.plannerModel} 모델을 사용합니다.`
+      : "Custom model ID를 입력하세요.";
+  });
+
   $("plannerRefreshBtn").addEventListener("click", loadPlanners);
   $("plannerConnectBtn").addEventListener("click", connectPlanner);
   $("plannerLogoutBtn").addEventListener("click", logoutCodex);
   $("generatePlanBtn").addEventListener("click", generatePlan);
+
+  document.querySelectorAll(".file-button").forEach((label) => {
+    label.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        label.querySelector('input[type="file"]')?.click();
+      }
+    });
+  });
 
   $("designFile").addEventListener("change", (event) => loadFile(event.target, "designInput"));
   $("storiesFile").addEventListener("change", (event) => loadFile(event.target, "storiesInput"));
