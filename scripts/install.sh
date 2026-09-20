@@ -29,7 +29,16 @@ else
 fi
 
 if command -v gemini >/dev/null 2>&1; then
-  echo "  [OK] Gemini CLI: $(command -v gemini)"
+  GEMINI_PATH="$(command -v gemini)"
+  case "$GEMINI_PATH" in
+    /mnt/[A-Za-z]/*)
+      echo "  [!!] Gemini CLI is Windows-hosted: $GEMINI_PATH"
+      echo "       Install a native WSL copy with: npm install -g @google/gemini-cli"
+      ;;
+    *)
+      echo "  [OK] Gemini CLI: $GEMINI_PATH"
+      ;;
+  esac
 else
   echo "  [--] Gemini CLI not found"
 fi
