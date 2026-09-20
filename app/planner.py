@@ -36,6 +36,12 @@ CODEX_REASONING_EFFORT_OPTIONS = [
 ]
 
 
+LOCAL_STORY_TARGET_MAX_PATHS = 4
+LOCAL_STORY_HARD_MAX_PATHS = 5
+LOCAL_STORY_MAX_NEW_FILES = 2
+LOCAL_STORY_MAX_RESLICE_PASSES = 2
+
+
 PLANNER_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -256,6 +262,143 @@ def validate_planner_result(value: Any) -> dict[str, Any]:
         "design_markdown": design.strip(),
         "stories": normalized,
     }
+
+
+def story_budget_violations(
+    stories: list[dict[str, Any]],
+    repo: Path | None = None,
+) -> list[str]:
+    """Return local-execution budget violations for a frontier-generated story queue."""
+    violations: list[str] = []
+
+    for story in stories:
+        story_id = str(story.get("id") or "?")
+        paths = story.get("allowed_paths") or []
+        unique_paths = list(dict.fromkeys(paths))
+
+        if len(paths) != len(unique_paths):
+            violations.append(
+                f"{story_id}: allowed_paths contains duplicate paths"
+            )
+
+        if len(unique_paths) > LOCAL_STORY_HARD_MAX_PATHS:
+            violations.append(
+                f"{story_id}: {len(unique_paths)} editable paths exceeds hard max "
+                f"{LOCAL_STORY_HARD_MAX_PATHS}"
+            )
+
+        invalid_paths = [
+            path
+            for path in unique_paths
+            if "\\" in path or path.startswith("/") or path.startswith("./")
+        ]
+        if invalid_paths:
+            violations.append(
+                f"{story_id}: allowed_paths must be literal repo-relative paths "
+                f"without regex/shell escaping: {', '.join(invalid_paths)}"
+            )
+
+        if repo is not None:
+            new_paths = [
+                path
+                for path in unique_paths
+                if "\\" not in path and not (repo / path).exists()
+            ]
+            if len(new_paths) > LOCAL_STORY_MAX_NEW_FILES:
+                violations.append(
+                    f"{story_id}: {len(new_paths)} new files exceeds hard max "
+                    f"{LOCAL_STORY_MAX_NEW_FILES}: {', '.join(new_paths)}"
+                )
+
+    return violations
+
+
+def format_story_budget_violations(violations: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in violations)
+
+
+def build_story_slicer_prompt(
+    requirement: str,
+    project_name: str,
+    title: str,
+    design_markdown: str,
+    stories: list[dict[str, Any]],
+    violations: list[str],
+) -> str:
+    """Build a second-pass prompt that preserves architecture and only re-slices stories."""
+    source_json = json.dumps(stories, ensure_ascii=False, indent=2)
+    violation_text = format_story_budget_violations(violations)
+
+    return f"""You are the LOCAL-EXECUTION STORY SLICER for a hybrid coding system.
+
+PROJECT
+=======
+{project_name}
+
+ORIGINAL USER REQUIREMENT
+=========================
+{requirement.strip()}
+
+LOCKED ARCHITECTURE TITLE
+=========================
+{title}
+
+LOCKED DESIGN
+=============
+{design_markdown}
+
+CURRENT STORY QUEUE
+===================
+{source_json}
+
+DETERMINISTIC BUDGET FAILURES
+=============================
+{violation_text}
+
+YOUR ONLY JOB
+=============
+Repartition the CURRENT STORY QUEUE into smaller executable stories for a local
+Qwen coding worker using Aider. Preserve the locked architecture and acceptance
+criteria. Do not redesign the product.
+
+LOCAL EXECUTION BUDGET
+======================
+- Target 2-4 editable files per story.
+- Hard maximum: {LOCAL_STORY_HARD_MAX_PATHS} allowed_paths entries per story,
+  INCLUDING test files.
+- Maximum {LOCAL_STORY_MAX_NEW_FILES} new files in one story.
+- allowed_paths means files expected to be EDITED, not files merely read for
+  context. The coding worker has a repo map for read-only context.
+- One primary subsystem or migration concern per story.
+- Never introduce a new abstraction/helper and migrate every consumer in the
+  same story. First establish the contract + focused tests, then migrate small
+  consumer groups in later stories.
+- If a new dependency changes how existing VM/test harnesses load files, make
+  compatibility/harness work an explicit early story before mass migration.
+- Keep storage/config, auth/session, build/deploy, worker/API, portal/navigation,
+  browser regression, and documentation in separate stories unless a tiny
+  atomic change genuinely requires two of them.
+- Every story must leave npm test and npm run build capable of passing once the
+  story is complete.
+- verify_commands are ONLY extra targeted checks. Do not repeat npm test or
+  npm run build there; the factory runs the base gates separately.
+- Use exact repo-relative paths such as apps/dachangi/sw.js. Never write
+  regex-style escapes such as sw\\.js, test\\.mjs, A\\:H, or shell globs.
+- Use sequential IDs S1, S2, S3... in execution order.
+- Do not create a final mega-story that is allowed to touch any file needed to
+  'fix remaining issues'. Split browser regression, bug fixes, and docs/final
+  verification into bounded stories.
+
+OUTPUT
+======
+Return the same structured contract:
+- title
+- design_markdown
+- stories[]
+
+The returned title and design_markdown must be the LOCKED title/design above.
+Only the story partitioning may change.
+"""
 
 
 def build_planner_prompt(requirement: str, project_name: str) -> str:
