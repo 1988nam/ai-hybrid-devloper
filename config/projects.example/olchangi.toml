@@ -1,0 +1,26 @@
+[project]
+source_repo = "~/code/your-project"
+base_ref = "main"
+default_stories = "~/local-coding-factory/inbox/your-project.json"
+node_modules = "~/code/your-project/node_modules"
+test_paths = ["tests"]
+
+[models]
+ollama = "http://127.0.0.1:11436"
+developer = "ollama_chat/qwen3.6:35b-a3b-coding"
+reviewer = "qwen3.8:27b"
+
+[verify]
+commands = ["npm test", "npm run build"]
+max_dev_attempts = 3
+max_review_protocol_attempts = 2
+dev_timeout = 1800
+verify_timeout = 900
+review_timeout = 600
+
+[tunnel]
+enabled = false
+host = "YOUR_OLLAMA_HOST"
+user = "YOUR_SSH_USER"
+local_port = 11436
+remote_port = 11434
