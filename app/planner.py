@@ -80,6 +80,39 @@ def find_native_executable(name: str) -> str | None:
     return None
 
 
+def build_gemini_login_script(executable: str) -> str:
+    bin_dir = str(Path(executable).parent)
+    quoted_bin = shlex.quote(bin_dir)
+    quoted_executable = shlex.quote(executable)
+
+    return f"""#!/usr/bin/env bash
+set +e
+
+export PATH={quoted_bin}:"$PATH"
+
+echo "========================================"
+echo " AI Hybrid Developer / Gemini Login"
+echo "========================================"
+echo
+echo "Gemini: {executable}"
+echo "Node  : $(command -v node || echo NOT_FOUND)"
+echo
+
+{quoted_executable}
+status=$?
+
+echo
+echo "Gemini CLI exited with code $status"
+if [ "$status" -ne 0 ]; then
+  echo
+  echo "The login window is being kept open so you can read the error."
+fi
+echo
+read -r -p "Press Enter to close this window..." _
+exit "$status"
+"""
+
+
 def _run(
     command: list[str],
     *,
@@ -596,11 +629,13 @@ class PlannerService:
         cwd = str(repo or Path.home())
         distro = os.environ.get("WSL_DISTRO_NAME")
         wt = shutil.which("wt.exe")
-        bin_dir = str(Path(executable).parent)
-        login_command = (
-            f'exec env PATH={shlex.quote(bin_dir)}:"$PATH" '
-            f"{shlex.quote(executable)}"
+
+        script_path = self.planner_dir / "gemini-login.sh"
+        script_path.write_text(
+            build_gemini_login_script(executable),
+            encoding="utf-8",
         )
+        script_path.chmod(0o700)
 
         if distro and wt:
             subprocess.Popen(
@@ -612,8 +647,7 @@ class PlannerService:
                     "--cd",
                     cwd,
                     "bash",
-                    "-lc",
-                    login_command,
+                    str(script_path),
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -621,13 +655,17 @@ class PlannerService:
             )
             return {
                 "launched": True,
-                "detail": "Gemini CLI 로그인 창을 열었습니다. Sign in with Google을 선택하세요.",
+                "detail": (
+                    "Gemini CLI 로그인 창을 열었습니다. "
+                    "오류가 나도 창을 닫지 않고 종료 코드를 보여줍니다."
+                ),
+                "script": str(script_path),
             }
 
         terminal = shutil.which("x-terminal-emulator")
         if terminal:
             subprocess.Popen(
-                [terminal, "-e", "bash", "-lc", login_command],
+                [terminal, "-e", "bash", str(script_path)],
                 cwd=repo,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -635,7 +673,11 @@ class PlannerService:
             )
             return {
                 "launched": True,
-                "detail": "Gemini CLI 로그인 창을 열었습니다. Sign in with Google을 선택하세요.",
+                "detail": (
+                    "Gemini CLI 로그인 창을 열었습니다. "
+                    "오류가 나도 창을 닫지 않고 종료 코드를 보여줍니다."
+                ),
+                "script": str(script_path),
             }
 
         raise PlannerError(
