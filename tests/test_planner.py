@@ -11,6 +11,27 @@ from app.planner import (
 )
 
 
+class PlannerSchemaTests(unittest.TestCase):
+    def test_every_story_property_is_required_for_strict_structured_output(self):
+        from app.planner import PLANNER_SCHEMA
+
+        story_schema = PLANNER_SCHEMA["properties"]["stories"]["items"]
+        self.assertEqual(
+            set(story_schema["required"]),
+            set(story_schema["properties"]),
+        )
+
+    def test_verify_commands_is_nullable_to_preserve_optional_semantics(self):
+        from app.planner import PLANNER_SCHEMA
+
+        verify_schema = (
+            PLANNER_SCHEMA["properties"]["stories"]["items"]["properties"][
+                "verify_commands"
+            ]
+        )
+        self.assertEqual(verify_schema["type"], ["array", "null"])
+
+
 class PlannerJsonTests(unittest.TestCase):
     def test_parse_model_json_accepts_raw_object(self):
         result = parse_model_json(
