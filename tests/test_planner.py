@@ -155,6 +155,37 @@ class CodexCommandTests(unittest.TestCase):
         self.assertEqual(command[sandbox_index + 1], "read-only")
 
 
+class CodexModelTests(unittest.TestCase):
+    def test_selected_model_is_passed_before_exec(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+            "gpt-5.6-sol",
+        )
+
+        model_index = command.index("--model")
+        exec_index = command.index("exec")
+
+        self.assertLess(model_index, exec_index)
+        self.assertEqual(command[model_index + 1], "gpt-5.6-sol")
+
+    def test_default_model_omits_model_flag(self):
+        from pathlib import Path
+
+        command = build_codex_exec_command(
+            "/usr/local/bin/codex",
+            Path("/tmp/schema.json"),
+            Path("/tmp/output.json"),
+            "Plan this repository",
+        )
+
+        self.assertNotIn("--model", command)
+
+
 class PlannerPromptTests(unittest.TestCase):
     def test_prompt_requires_repo_grounding_and_read_only_planning(self):
         prompt = build_planner_prompt(
